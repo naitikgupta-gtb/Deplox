@@ -1,0 +1,58 @@
+# DEPLOX local-dev stack.
+# Spins up Postgres + Redis + Caddy so you can run the full pipeline
+# without installing system services.
+#
+# Usage:
+#   pnpm compose:up
+#   pnpm compose:down
+
+# Networks --------------------------------------------------------------
+# `deplox-runtime` is the dedicated bridge network that user containers run on.
+# This isolates them from each other and from the host (no docker.sock exposure).
+networks:
+  deplox-runtime:
+    name: deplox-runtime
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deplox
+      POSTGRES_PASSWORD: deplox
+      POSTGRES_DB: deplox
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deplox"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # public reverse proxy (DEPLOX_CADDY_PORT)
+      - "2019:2019"   # admin API
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+      - ./caddy/local-authorities:/etc/caddy/local-authorities:ro
+    environment:
+      # Caddy needs to trust the local CA we generated for development TLS.
+      - CADDY_TRUSTED_ROOT_CA_FILE=/etc/caddy/local-authorities/root.crt

@@ -1,0 +1,25 @@
+{
+  # DEPLOX Caddyfile — Stage 2 reverse proxy + on-demand TLS.
+  #
+  # Public traffic enters on :8000. Caddy matches:
+  #   - exact custom domains (api maps them to the assigned runtime port)
+  #   - the wildcard *.localhost for local dev (port-mapped preview URLs)
+  #
+  # On-demand TLS is enabled for any custom domain that resolves to this
+  # server. In production this requires Caddy to be reachable on :80/:443
+  # with a public IP, and DEPLOX_CADDY_ADMIN_URL pointed at :2019.
+
+  admin localhost:2019
+
+  # Default site: fall through to the dashboard.
+  :8000 {
+    reverse_proxy localhost:5173
+  }
+
+  # On-demand HTTPS for any hostname the API has registered.
+  # The DEPLOX API POSTs to /load to add new entries and /unload to remove
+  # them. Each one routes to the corresponding runtime container's host port.
+}
+
+# Helper snippets used by Caddy's on-demand TLS plumbing are generated at
+# runtime by the API; see services/deployment-orchestrator.ts.

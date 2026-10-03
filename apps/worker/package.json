@@ -1,0 +1,25 @@
+{
+  "name": "@deplox/worker",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file=../../.env dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'no lint configured for worker'",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@deplox/api": "workspace:*",
+    "@deplox/shared-config": "workspace:*",
+    "@deplox/shared-logger": "workspace:*",
+    "@deplox/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
