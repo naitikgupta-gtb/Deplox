@@ -25,6 +25,7 @@ import { registerDeploymentRoutes } from './routes/deployments.js';
 import { registerEnvRoutes } from './routes/env.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { primePortCache } from './services/port-allocator.js';
+import { primeCaddyRoutes } from './services/caddy.js';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -108,6 +109,11 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   // Prime port cache from DB.
   try { await primePortCache(); } catch (err) { app.log.warn({ err }, 'port cache priming failed'); }
+
+  // Re-register Caddy routes for any running deployments. This restores the
+  // reverse-proxy mapping after an API restart — without it, custom domains
+  // would 502 until the next deploy.
+  try { await primeCaddyRoutes(); } catch (err) { app.log.warn({ err }, 'caddy route priming failed'); }
 
   return app;
 }

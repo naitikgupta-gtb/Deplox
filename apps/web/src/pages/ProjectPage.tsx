@@ -35,6 +35,20 @@ export function ProjectPage(): JSX.Element {
     refreshAll().catch(() => undefined);
   }, [projectId]);
 
+  // While any deployment is in flight (queued/cloning/detecting/building/starting),
+  // poll every 3s so the dashboard reflects new state without a manual reload.
+  useEffect(() => {
+    const inFlight = deployments?.some((d) =>
+      ['queued', 'cloning', 'detecting', 'building', 'starting'].includes(d.status),
+    );
+    if (!inFlight) return;
+    const id = window.setInterval(() => {
+      refreshAll().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deployments]);
+
   async function deploy(): Promise<void> {
     if (!projectId) return;
     setBusy(true);
@@ -95,6 +109,12 @@ export function ProjectPage(): JSX.Element {
       <WebhookSection
         projectId={project.id}
         autoDeploy={project.autoDeploy}
+        onChange={refreshAll}
+      />
+
+      <CustomDomainSection
+        projectId={project.id}
+        customDomain={project.customDomain}
         onChange={refreshAll}
       />
 
@@ -404,6 +424,79 @@ function WebhookSection({
         </div>
       </div>
 
+      {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
+    </section>
+  );
+}
+
+function CustomDomainSection({
+  projectId,
+  customDomain,
+  onChange,
+}: {
+  projectId: string;
+  customDomain: string | null;
+  onChange: () => Promise<void>;
+}): JSX.Element {
+  const [editing, setEditing] = useState(customDomain === null);
+  const [draft, setDraft] = useState(customDomain ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = draft.trim() === '' ? null : draft.trim();
+      await api.updateProject(projectId, { customDomain: next });
+      setEditing(next === null);
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="section">
+      <h2>Custom domain</h2>
+      {customDomain && !editing ? (
+        <div className="kv">
+          <div className="kv-label">Hostname</div>
+          <div className="kv-value mono">
+            <code>{customDomain}</code>
+            <button className="ghost" onClick={() => { setDraft(customDomain); setEditing(true); }}>
+              Edit
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="form" style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+          <label style={{ flex: 1 }}>
+            <span className="label-text">Hostname</span>
+            <input
+              placeholder="myapp.example.com"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              pattern="^[a-z0-9.-]+\.[a-z]{2,}$"
+              disabled={busy}
+            />
+            <span className="help">
+              Point this domain's DNS A/AAAA record at the DEPLOX server.
+              TLS is issued automatically on first request.
+            </span>
+          </label>
+          <button className="primary" onClick={save} disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {customDomain ? (
+            <button className="ghost" onClick={() => { setDraft(customDomain); setEditing(false); }}>
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      )}
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
     </section>
   );

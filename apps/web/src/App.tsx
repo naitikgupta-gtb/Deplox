@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { NewProjectPage } from './pages/NewProjectPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { DeploymentPage } from './pages/DeploymentPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 export function App(): JSX.Element {
   const [user, setUser] = useState<User | null>(null);
@@ -44,7 +45,7 @@ export function App(): JSX.Element {
           path="/projects/:projectId/deployments/:deploymentId"
           element={user ? <DeploymentPage /> : <Navigate to="/" replace />}
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={user ? <NotFoundPage /> : <Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );

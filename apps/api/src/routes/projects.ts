@@ -16,6 +16,10 @@ import { encrypt } from '../services/encryption.js';
 import { loadConfig } from '@deplox/shared-config';
 import type { Project } from '@deplox/shared-types';
 import { decrypt } from '../services/encryption.js';
+import {
+  registerDomainRoute,
+  unregisterDomainRoute,
+} from '../services/caddy.js';
 
 const cfg = loadConfig();
 
@@ -116,6 +120,11 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       })
       .returning();
     if (!row) return reply.code(500).send({ error: 'insert_failed' });
+
+    // The custom domain's Caddy route is registered by the deployment
+    // orchestrator on first deploy (since we need a real hostPort to dial).
+    // Here we just persist the user's intent.
+
     return reply.code(201).send(toProject(row));
   });
 
@@ -168,6 +177,14 @@ export function registerProjectRoutes(app: FastifyInstance): void {
         message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       });
     }
+
+    // Fetch the current row so we can compare customDomain before / after.
+    const [current] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, id), eq(projects.userId, req.user!.id)));
+    if (!current) return reply.code(404).send({ error: 'not_found' });
+
     const update: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.autoDeploy !== undefined) update.autoDeploy = parsed.data.autoDeploy;
     if (parsed.data.customDomain !== undefined) update.customDomain = parsed.data.customDomain;
@@ -177,6 +194,36 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       .where(and(eq(projects.id, id), eq(projects.userId, req.user!.id)))
       .returning();
     if (!row) return reply.code(404).send({ error: 'not_found' });
+
+    // Re-register the Caddy route if the custom domain actually changed.
+    // - Domain added or changed → unregister the old one, then leave the
+    //   next deployment to register the new one (we don't have a hostPort yet).
+    // - Domain removed → unregister the route entirely.
+    if (
+      parsed.data.customDomain !== undefined &&
+      current.customDomain !== row.customDomain
+    ) {
+      if (current.customDomain) {
+        unregisterDomainRoute(current.id).catch(() => undefined);
+      }
+      // If the project has a currently-running deployment, immediately
+      // re-register against the new domain so traffic flows without waiting
+      // for the next one.
+      if (row.customDomain) {
+        const running = await db
+          .select()
+          .from(deployments)
+          .where(eq(deployments.projectId, row.id))
+          .limit(50);
+        const live = running.find(
+          (d) => d.status === 'running' && d.hostPort !== null,
+        );
+        if (live && live.hostPort !== null) {
+          registerDomainRoute(row.id, row.customDomain, live.hostPort).catch(() => undefined);
+        }
+      }
+    }
+
     return toProject(row);
   });
 
@@ -210,6 +257,11 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       if (d.status === 'running' || d.status === 'starting') {
         try { await stopDeployment(d.id); } catch { /* ignore */ }
       }
+    }
+
+    // Remove the Caddy route for this project's custom domain.
+    if (row.customDomain) {
+      unregisterDomainRoute(row.id).catch(() => undefined);
     }
 
     await db.delete(projects).where(eq(projects.id, id));

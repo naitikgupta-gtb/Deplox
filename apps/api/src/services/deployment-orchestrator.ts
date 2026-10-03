@@ -29,6 +29,7 @@ import {
   completeStream,
   setStatus,
 } from './log-streamer.js';
+import { registerDomainRoute, unregisterDomainRoute } from './caddy.js';
 
 const log = childLogger({ component: 'orchestrator' });
 
@@ -152,6 +153,27 @@ export async function runDeployment(deploymentId: string): Promise<void> {
 
     setStatus(deploymentId, 'running');
     completeStream(deploymentId, 'running');
+
+    // Stage 3.1: register the Caddy route so the custom domain resolves to
+    // this deployment's host port. Caddy will issue a Let's Encrypt cert via
+    // on-demand TLS on first request. Failures here are non-fatal — the
+    // container is running; the user just won't be able to reach it via the
+    // custom domain until Caddy is reachable.
+    if (project.customDomain) {
+      const result = await registerDomainRoute(project.id, project.customDomain, hostPort);
+      if (!result.ok) {
+        appendLog(
+          deploymentId,
+          `[deplox] caddy route registration failed for ${project.customDomain}: ${result.message}`,
+        );
+      } else {
+        appendLog(
+          deploymentId,
+          `[deplox] caddy route registered: ${project.customDomain} → localhost:${hostPort}`,
+        );
+      }
+    }
+
     log.info({ deploymentId, publicUrl }, 'deployment running');
   } catch (err) {
     const message = (err as Error).message ?? String(err);
@@ -187,6 +209,19 @@ export async function stopDeployment(deploymentId: string): Promise<void> {
     await provider.stop({ containerId: row.containerId });
   }
   if (row.hostPort) releasePort(row.hostPort);
+
+  // Remove the Caddy route for this project's custom domain (if any).
+  // The next running deployment for this project will re-register with its
+  // own host port; until then, the domain has no upstream.
+  const [project] = await db
+    .select({ id: projects.id, customDomain: projects.customDomain })
+    .from(projects)
+    .where(eq(projects.id, row.projectId));
+  if (project?.customDomain) {
+    unregisterDomainRoute(project.id).catch((err) => {
+      log.warn({ err, projectId: project.id }, 'caddy unregister failed on stop');
+    });
+  }
 
   await db
     .update(deployments)
@@ -284,8 +319,12 @@ export async function rollbackDeployment(
 }
 
 function buildPublicUrl(hostPort: number, customDomain: string | null): string {
-  if (customDomain) return `https://${customDomain}`;
-  // For local Stage 1/2: we expose directly on host port.
+  if (customDomain) {
+    // Stage 3.1: serve over HTTPS via Caddy's on-demand TLS.
+    // http:// fallback shown alongside until DNS is configured to point here.
+    return `https://${customDomain}`;
+  }
+  // Stage 1/2: direct host port (no reverse proxy needed for local dev).
   return `http://localhost:${hostPort}`;
 }
 
