@@ -76,6 +76,11 @@ const Schema = z.object({
 
   // Web origin (for post-OAuth redirects). Defaults to the public URL.
   DEPLOX_WEB_URL: z.string().url().optional(),
+
+  // Webhook fallback secret — used only when a project has no per-project
+  // webhookSecret set. We accept it as optional; if absent, webhooks will be
+  // rejected with 503 to avoid silently accepting unverified payloads.
+  DEPLOX_WEBHOOK_HMAC_FALLBACK_SECRET: z.string().min(16).optional(),
 });
 
 export type DeploxConfig = Readonly<z.infer<typeof Schema>>;

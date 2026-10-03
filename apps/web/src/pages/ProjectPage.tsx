@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Deployment, EnvVar, Project } from '@deplox/shared-types';
-import { api } from '../lib/api';
+import { api, type WebhookInfo } from '../lib/api';
 import {
   IconExternalLink,
   IconGithub,
   IconPlus,
+  IconRefresh,
   IconRocket,
   IconTerminal,
+  IconZap,
 } from '../components/Icon';
 
 export function ProjectPage(): JSX.Element {
@@ -89,6 +91,12 @@ export function ProjectPage(): JSX.Element {
           </span>
         </div>
       )}
+
+      <WebhookSection
+        projectId={project.id}
+        autoDeploy={project.autoDeploy}
+        onChange={refreshAll}
+      />
 
       <section className="section">
         <h2>Deployments</h2>
@@ -254,5 +262,149 @@ function EnvEditor({
       </div>
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
     </div>
+  );
+}
+
+function WebhookSection({
+  projectId,
+  autoDeploy,
+  onChange,
+}: {
+  projectId: string;
+  autoDeploy: boolean;
+  onChange: () => Promise<void>;
+}): JSX.Element {
+  const [info, setInfo] = useState<WebhookInfo | null>(null);
+  const [reveal, setReveal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'url' | 'secret' | null>(null);
+
+  useEffect(() => {
+    api
+      .getWebhook(projectId)
+      .then(setInfo)
+      .catch((err) => setError(String(err)));
+  }, [projectId]);
+
+  async function copy(text: string, which: 'url' | 'secret'): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied((c) => (c === which ? null : c)), 1500);
+    } catch (err) {
+      setError(`Copy failed: ${err}`);
+    }
+  }
+
+  async function rotate(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.rotateWebhook(projectId);
+      setInfo(next);
+      setReveal(true);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleAutoDeploy(next: boolean): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateProject(projectId, { autoDeploy: next });
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!info) {
+    return (
+      <section className="section">
+        <h2>Auto-deploy</h2>
+        <p className="muted small">Loading webhook…</p>
+      </section>
+    );
+  }
+
+  const maskedSecret = info.secret
+    ? `${info.secret.slice(0, 4)}…${info.secret.slice(-4)}`
+    : '—';
+
+  return (
+    <section className="section">
+      <h2>Auto-deploy</h2>
+
+      <div className="webhook-row">
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={autoDeploy}
+            disabled={busy}
+            onChange={(e) => toggleAutoDeploy(e.target.checked)}
+          />
+          <span className="toggle-track">
+            <span className="toggle-thumb" />
+          </span>
+          <span className="toggle-label">
+            <IconZap size={13} />
+            Auto-deploy on push to <code className="mono">{info.events.join(', ')}</code>
+          </span>
+        </label>
+      </div>
+
+      <p className="muted small" style={{ marginBottom: 12 }}>
+        Point a GitHub webhook at the URL below and DEPLOX will trigger a new
+        deployment whenever the configured branch updates.
+      </p>
+
+      <div className="kv">
+        <div className="kv-label">Payload URL</div>
+        <div className="kv-value mono">
+          <code>{info.url}</code>
+          <button
+            className="ghost"
+            onClick={() => copy(info.url, 'url')}
+            disabled={!info.url}
+          >
+            {copied === 'url' ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+
+        <div className="kv-label">Secret</div>
+        <div className="kv-value mono">
+          <code>{reveal ? info.secret : maskedSecret}</code>
+          <button className="ghost" onClick={() => setReveal((r) => !r)}>
+            {reveal ? 'Hide' : 'Reveal'}
+          </button>
+          <button
+            className="ghost"
+            onClick={() => copy(info.secret, 'secret')}
+            disabled={!info.secret}
+          >
+            {copied === 'secret' ? 'Copied' : 'Copy'}
+          </button>
+          <button className="ghost" onClick={rotate} disabled={busy}>
+            <IconRefresh size={12} /> {busy ? 'Rotating…' : 'Rotate'}
+          </button>
+        </div>
+
+        <div className="kv-label">Content type</div>
+        <div className="kv-value mono"><code>{info.contentType}</code></div>
+
+        <div className="kv-label">Events</div>
+        <div className="kv-value mono">
+          <code>{info.events.join(', ')}</code>
+        </div>
+      </div>
+
+      {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
+    </section>
   );
 }

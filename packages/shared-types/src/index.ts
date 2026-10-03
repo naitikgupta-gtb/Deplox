@@ -73,6 +73,10 @@ export interface Project {
   readonly defaultBranch: string;
   readonly framework: Framework | null;
   readonly customDomain: string | null;
+  /** Whether pushes to the default branch should trigger an automatic deploy. */
+  readonly autoDeploy: boolean;
+  /** Whether this project has a webhook secret configured (never expose the secret itself). */
+  readonly webhookConfigured: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

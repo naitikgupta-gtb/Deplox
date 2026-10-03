@@ -85,6 +85,10 @@ export const projects = pgTable(
     defaultBranch: text('default_branch').notNull().default('main'),
     framework: text('framework'), // null until first deployment detects it
     customDomain: text('custom_domain'),
+    /** Random secret GitHub uses to sign webhook payloads (X-Hub-Signature-256). */
+    webhookSecret: text('webhook_secret'),
+    /** Whether the project auto-deploys on push to the default branch. */
+    autoDeploy: boolean('auto_deploy').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

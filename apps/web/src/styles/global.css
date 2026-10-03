@@ -671,3 +671,88 @@ code {
   .topbar { padding: 12px 20px; }
   .main { padding: 24px 20px 60px; }
 }
+
+/* ===== toggle switch (autodeploy etc) ===== */
+.toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  user-select: none;
+}
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle-track {
+  position: relative;
+  width: 36px; height: 20px;
+  background: var(--color-border-strong);
+  border-radius: 999px;
+  transition: background 120ms ease;
+  flex-shrink: 0;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  transition: transform 140ms ease;
+}
+.toggle input:checked + .toggle-track { background: var(--color-fg); }
+.toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(16px); }
+.toggle input:disabled + .toggle-track { opacity: 0.5; cursor: not-allowed; }
+.toggle-label { display: inline-flex; align-items: center; gap: 6px; color: var(--color-fg); }
+.toggle-label code { font-size: 12px; background: var(--color-bg-alt); padding: 1px 6px; border-radius: 4px; }
+
+/* ===== key-value rows (webhook URL / secret etc) ===== */
+.kv {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.kv-label {
+  background: var(--color-bg-alt);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  display: flex; align-items: center;
+}
+.kv-value {
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.kv-value code {
+  flex: 1;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.kv .kv-label:last-of-type,
+.kv .kv-value:nth-last-of-type(-n+2) { border-bottom: none; }
+
+/* ===== ghost buttons (small inline actions) ===== */
+button.ghost {
+  background: transparent;
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: background 100ms ease;
+}
+button.ghost:hover { background: var(--color-bg-alt); }
+button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.webhook-row { margin-bottom: 14px; }

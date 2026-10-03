@@ -43,6 +43,18 @@ async function request<T>(input: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface WebhookInfo {
+  readonly url: string;
+  readonly secret: string;
+  readonly contentType: string;
+  readonly events: ReadonlyArray<string>;
+}
+
+export interface UpdateProjectInput {
+  readonly autoDeploy?: boolean;
+  readonly customDomain?: string | null;
+}
+
 export const api = {
   me: () => request<User>('/api/me'),
   listProjects: () => request<Project[]>('/api/projects'),
@@ -51,6 +63,15 @@ export const api = {
   deleteProject: (id: string) =>
     request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
+  updateProject: (id: string, input: UpdateProjectInput) =>
+    request<Project>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  getWebhook: (projectId: string) =>
+    request<WebhookInfo>(`/api/projects/${projectId}/webhook`),
+  rotateWebhook: (projectId: string) =>
+    request<WebhookInfo>(`/api/projects/${projectId}/webhook/rotate`, { method: 'POST' }),
   listDeployments: (projectId: string) =>
     request<Deployment[]>(`/api/projects/${projectId}/deployments`),
   createDeployment: (projectId: string, input: CreateDeploymentInput = {}) =>

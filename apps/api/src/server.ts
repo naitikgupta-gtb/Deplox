@@ -23,8 +23,9 @@ import { registerUserRoutes } from './routes/users.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerDeploymentRoutes } from './routes/deployments.js';
 import { registerEnvRoutes } from './routes/env.js';
+import { registerWebhookRoutes } from './routes/webhooks.js';
 import { primePortCache } from './services/port-allocator.js';
-import type { FastifyBaseLogger } from 'fastify';
+import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const cfg = loadConfig();
@@ -50,6 +51,31 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(cookie);
   await app.register(sensible);
 
+  // Capture raw request bodies for routes that verify HMAC (e.g. webhooks).
+  // Stash the raw bytes on req.rawBody; Fastify's normal JSON parser still
+  // populates req.body. Without this, we'd lose the bytes needed to compute
+  // the X-Hub-Signature-256 HMAC against the *exact* body GitHub sent.
+  //
+  // We don't throw on invalid JSON here — webhooks may receive payloads we
+  // want to handle gracefully (e.g. returning a 400 rather than a 500).
+  // Routes that need a parsed JSON body should re-parse from req.rawBody.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'buffer' },
+    (req: FastifyRequest, body: Buffer, done) => {
+      (req as { rawBody?: Buffer }).rawBody = body;
+      if (body.length === 0) return done(null, null);
+      try {
+        const json = JSON.parse(body.toString('utf8'));
+        done(null, json);
+      } catch {
+        // Defer the parse error to the route so it can return a clean 400
+        // with a stable shape, instead of bubbling a 500 from the parser.
+        done(null, { __deploxInvalidJson: true });
+      }
+    },
+  );
+
   // Attach the user (if any) on every request before routes run.
   app.addHook('preHandler', attachUser);
 
@@ -59,6 +85,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // sibling sub-plugin so the auth hook below doesn't reach them.
   registerHealthRoutes(app);
   registerAuthRoutes(app);
+  registerWebhookRoutes(app);
 
   // ---- Authenticated routes --------------------------------------------
   // Wrapped in their own sub-plugin so `requireAuth` only fires for these.
