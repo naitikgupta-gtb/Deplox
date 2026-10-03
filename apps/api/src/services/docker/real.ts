@@ -66,17 +66,22 @@ EXPOSE 3000
 CMD ["node", "server.js"]
 `;
     case 'node':
-      // Ember, Express, Fastify, Koa, etc. CMD falls back through common
-      // scripts so we don't assume `node index.js`.
-      return `FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev || true
-COPY . .
-EXPOSE 3000
-USER node
-CMD ["sh", "-c", "npm start -- --host 0.0.0.0 || node index.js || node server.js || node src/index.js"]
-`;
+      // Ember, Express, Fastify, Koa, etc. We try the package's `start`
+      // script first (most projects define one), then fall through to common
+      // entry points. We do NOT inject `--host 0.0.0.0` — apps that ignore
+      // unknown flags are lucky, and those that don't (strict Express 5)
+      // will crash with EADDRINUSE or argv errors.
+      return [
+        'FROM node:20-alpine',
+        'WORKDIR /app',
+        'COPY package*.json ./',
+        'RUN npm install --omit=dev || true',
+        'COPY . .',
+        'EXPOSE 3000',
+        'USER node',
+        'CMD ["sh", "-c", "npm start || node server.js || node index.js || node src/index.js || node src/server.js || node app.js || (echo no-entry-point-found && exit 1)"]',
+        '',
+      ].join('\n');
     case 'python':
       return `FROM python:3.12-slim
 WORKDIR /app

@@ -137,6 +137,29 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       },
     });
 
+    // -- HEALTH CHECK ------------------------------------------------------
+    // `container.start()` only confirms Docker has spawned the process — the
+    // app inside might still be booting, crash-looping, or fail to bind.
+    // We poll the host port for up to 30s and treat any TCP-accept or HTTP
+    // response as "the process is alive". If nothing responds, we mark the
+    // deployment failed with the recent container logs so the user can see
+    // why.
+    appendLog(deploymentId, `[deplox] health-checking localhost:${hostPort}…`);
+    const healthy = await waitForPort(hostPort, 30_000, (attempt) => {
+      if (attempt > 1 && attempt % 5 === 0) {
+        appendLog(deploymentId, `[deplox] still waiting for the app to listen (attempt ${attempt})…`);
+      }
+    });
+    if (!healthy) {
+      const recent = await getRecentContainerLogs(deploymentId, runResult.containerId);
+      throw new Error(
+        `App did not start listening on port ${hostPort} within 30s. ` +
+          `Most common causes: missing required env vars (DATABASE_URL, API keys, etc.), ` +
+          `wrong entry point, or the app crashed on boot. Recent logs:\n${recent}`,
+      );
+    }
+    appendLog(deploymentId, `[deplox] app is accepting connections on :${hostPort}`);
+
     const publicUrl = buildPublicUrl(hostPort, project.customDomain);
 
     await db
@@ -331,6 +354,55 @@ function buildPublicUrl(hostPort: number, customDomain: string | null): string {
 async function collectLogs(deploymentId: string): Promise<string> {
   const { getBufferedLogs } = await import('./log-streamer.js');
   return getBufferedLogs(deploymentId).join('\n');
+}
+
+/**
+ * Polls `localhost:port` every 500ms until it responds to a plain TCP connect
+ * (or any HTTP request). Used after `container.start()` to make sure the app
+ * inside is actually up before we mark the deployment "running".
+ */
+async function waitForPort(
+  port: number,
+  timeoutMs: number,
+  onAttempt?: (n: number) => void,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    onAttempt?.(attempt);
+    try {
+      // A HTTP probe doubles as a "the app accepted a request" check;
+      // a refused connection surfaces fast so we retry quickly.
+      const res = await fetch(`http://127.0.0.1:${port}/`, {
+        signal: AbortSignal.timeout(1500),
+      });
+      // Any HTTP response (including 404) means the app is alive.
+      if (res.status >= 100) return true;
+    } catch {
+      // ECONNREFUSED = not listening yet — that's normal during boot.
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * Fetches the most recent runtime logs from the running container so the user
+ * can see *why* the app failed to start. Falls back to empty string if logs
+ * can't be retrieved.
+ */
+async function getRecentContainerLogs(deploymentId: string, containerId: string): Promise<string> {
+  try {
+    const provider = getDockerProvider();
+    if ('logs' in provider && typeof provider.logs === 'function') {
+      const text = await provider.logs({ containerId, tail: 80 });
+      return text.split('\n').slice(-40).join('\n');
+    }
+  } catch (err) {
+    log.warn({ err, deploymentId }, 'failed to fetch container logs for diagnostics');
+  }
+  return '(no logs available)';
 }
 
 // BullMQ payload helpers ------------------------------------------------------
