@@ -22,7 +22,9 @@
     "db:studio": "pnpm --filter @deplox/api run db:studio",
     "compose:up": "docker compose -f infra/docker-compose.yml up -d",
     "compose:down": "docker compose -f infra/docker-compose.yml down",
-    "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache"
+    "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
+    "tunnel:public": "node scripts/tunnel-public.mjs",
+    "tunnel:public-only": "node scripts/tunnel-public.mjs --tunnel-only"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
