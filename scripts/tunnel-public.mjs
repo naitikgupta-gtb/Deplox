@@ -83,14 +83,26 @@ function startTunnel() {
 
 function startDevServer() {
   console.log('[dev] starting pnpm dev in a new terminal');
-  // Use `start` on Windows to spawn detached. Fallback to spawn detached.
   if (process.platform === 'win32') {
-    spawn('cmd', ['/c', 'start', '""', 'cmd', '/c', `cd /d "${repoRoot}" && pnpm dev`], {
-      stdio: 'ignore',
-      detached: true,
-    });
+    // Spawn a NEW PowerShell window so the user can see pnpm dev output.
+    // The `Start-Process` PowerShell cmdlet with -PassThru returns a process
+    // object whose handle we can detach; the new window stays open after we exit.
+    spawn(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `Start-Process powershell -ArgumentList '-NoExit','-Command',"cd '${repoRoot}'; pnpm dev" -WindowStyle Normal`,
+      ],
+      { stdio: 'ignore', detached: true, windowsHide: true },
+    ).unref();
   } else {
-    spawn('pnpm', ['dev'], { cwd: repoRoot, detached: true, stdio: 'ignore' });
+    spawn('pnpm', ['dev'], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
   }
 }
 
