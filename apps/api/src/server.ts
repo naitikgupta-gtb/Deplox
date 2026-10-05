@@ -24,6 +24,8 @@ import { registerProjectRoutes } from './routes/projects.js';
 import { registerDeploymentRoutes } from './routes/deployments.js';
 import { registerEnvRoutes } from './routes/env.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { registerBillingRoutes, registerAuthedBillingRoutes } from './routes/billing.js';
+import { registerFoundingRoutes } from './routes/founding.js';
 import { primePortCache } from './services/port-allocator.js';
 import { primeCaddyRoutes } from './services/caddy.js';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
@@ -87,6 +89,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerHealthRoutes(app);
   registerAuthRoutes(app);
   registerWebhookRoutes(app);
+  registerFoundingRoutes(app);
+  registerBillingRoutes(app); // webhook is public; the rest are authed
 
   // ---- Authenticated routes --------------------------------------------
   // Wrapped in their own sub-plugin so `requireAuth` only fires for these.
@@ -96,6 +100,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     registerProjectRoutes(subApp);
     registerDeploymentRoutes(subApp);
     registerEnvRoutes(subApp);
+    registerAuthedBillingRoutes(subApp);
   });
 
   app.setErrorHandler((err, req, reply) => {

@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Deployment, Project, User } from '@deplox/shared-types';
 import { api } from '../lib/api';
 import {
+  IconBolt,
   IconExternalLink,
-  FrameworkBadge,
   FrameworkIcon,
   IconArrowRight,
   IconPlus,
   IconRocket,
 } from '../components/Icon';
+
+const FREE_PROJECT_LIMIT = 7;
 
 export function DashboardPage({ user }: { user: User }): JSX.Element {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -18,7 +20,6 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
   useEffect(() => {
     api.listProjects().then(async (p) => {
       setProjects(p);
-      // load latest deployment per project
       const map: Record<string, Deployment[]> = {};
       for (const proj of p) {
         try {
@@ -41,6 +42,25 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
     ? new Date(lastDeploy).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
     : '—';
 
+  const projectPct = useMemo(
+    () => Math.min(100, (total / FREE_PROJECT_LIMIT) * 100),
+    [total],
+  );
+
+  // Build a recent-activity feed: latest deployment per project, sorted by time.
+  const activity = useMemo(() => {
+    if (!projects) return [];
+    const items: Array<{ project: Project; deployment: Deployment }> = [];
+    for (const p of projects) {
+      const d = deployments[p.id]?.[0];
+      if (d) items.push({ project: p, deployment: d });
+    }
+    items.sort((a, b) =>
+      new Date(b.deployment.startedAt).getTime() - new Date(a.deployment.startedAt).getTime()
+    );
+    return items.slice(0, 6);
+  }, [projects, deployments]);
+
   return (
     <div className="dashboard">
       <header className="page-header">
@@ -55,11 +75,27 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
         </div>
       </header>
 
+      {/* Founding member banner — only on free + low project count */}
+      {total <= 5 && (
+        <div className="founding-banner">
+          <div className="founding-banner-text">
+            <h3>First 50 users get Pro for 6 months</h3>
+            <p>Claim your slot before they're gone. ₹11,940 value, free for 6 months in exchange for feedback.</p>
+          </div>
+          <Link to="/founding" className="cta-primary" style={{ fontSize: 13, padding: '8px 14px' }}>
+            <IconBolt size={13} /> Claim a slot
+          </Link>
+        </div>
+      )}
+
       <div className="summary">
         <div className="card">
           <div className="label">Projects</div>
-          <div className="value">{total}</div>
-          <div className="sub">{total === 0 ? 'no projects yet' : `across ${total} ${total === 1 ? 'repo' : 'repos'}`}</div>
+          <div className="value">{total} <span style={{ fontSize: 14, color: 'var(--color-fg-faint)', fontWeight: 400 }}>/ {FREE_PROJECT_LIMIT}</span></div>
+          <div className="usage-bar" style={{ marginTop: 8 }}>
+            <div className="usage-bar-fill" style={{ width: `${projectPct}%` }} />
+          </div>
+          <div className="sub">{total === 0 ? 'no projects yet' : `${FREE_PROJECT_LIMIT - total} slots left on Free`}</div>
         </div>
         <div className="card">
           <div className="label">Running</div>
@@ -138,6 +174,33 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
             );
           })}
         </div>
+      )}
+
+      {activity.length > 0 && (
+        <section className="activity-feed">
+          <h2>Recent activity</h2>
+          {activity.map(({ project, deployment }) => (
+            <Link
+              to={`/projects/${project.id}/deployments/${deployment.id}`}
+              key={deployment.id}
+              style={{ color: 'inherit' }}
+            >
+              <div className="activity-item">
+                <span className="time">{timeAgo(deployment.startedAt)}</span>
+                <span className={`status status-${deployment.status}`} style={{ flexShrink: 0 }}>
+                  <span className="dot" /> {deployment.status}
+                </span>
+                <span className="body">
+                  <strong>{project.name}</strong>
+                  <span className="muted"> · {deployment.commitSha.slice(0, 7)}</span>
+                </span>
+                <span style={{ color: 'var(--color-fg-faint)' }}>
+                  <IconArrowRight size={12} />
+                </span>
+              </div>
+            </Link>
+          ))}
+        </section>
       )}
     </div>
   );

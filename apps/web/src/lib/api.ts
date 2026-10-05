@@ -55,6 +55,31 @@ export interface UpdateProjectInput {
   readonly customDomain?: string | null;
 }
 
+export interface BillingInfo {
+  readonly plan: 'free' | 'pro' | 'team';
+  readonly status: 'active' | 'past_due' | 'cancelled' | 'none';
+  readonly currentPeriodEnd: string | null;
+  readonly cancelAtPeriodEnd: boolean;
+}
+
+export interface FoundingMemberInput {
+  readonly email: string;
+  readonly githubUsername: string;
+  readonly useCase: string;
+}
+
+export interface FoundingSlotsRemaining {
+  readonly remaining: number;
+  readonly total: number;
+}
+
+export interface FoundingMemberResponse {
+  readonly ok: boolean;
+  readonly slotNumber: number;
+  readonly remainingSlots: number;
+  readonly message?: string;
+}
+
 export const api = {
   me: () => request<User>('/api/me'),
   listProjects: () => request<Project[]>('/api/projects'),
@@ -95,6 +120,24 @@ export const api = {
   deleteEnv: (projectId: string, key: string) =>
     request<void>(`/api/projects/${projectId}/env/${encodeURIComponent(key)}`, {
       method: 'DELETE',
+    }),
+
+  // Billing & founding-member endpoints (Phase 4 — backend stubs land in Phase 4d).
+  getBilling: () => request<BillingInfo>('/api/billing'),
+  openBillingPortal: () =>
+    request<{ url: string }>('/api/billing/portal', { method: 'POST' }).then((r) => {
+      if (typeof window !== 'undefined' && r.url) window.location.href = r.url;
+      return r;
+    }),
+  foundingSlotsRemaining: () =>
+    request<FoundingSlotsRemaining>('/api/founding/slots').catch(() => ({
+      remaining: 50,
+      total: 50,
+    })),
+  becomeFoundingMember: (input: FoundingMemberInput) =>
+    request<FoundingMemberResponse>('/api/founding/claim', {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
 };
 

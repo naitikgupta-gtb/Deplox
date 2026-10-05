@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   IconArrowRight,
+  IconBolt,
   IconCheck,
   IconGithub,
   IconHistory,
@@ -13,6 +14,18 @@ import {
 export function LandingPage(): JSX.Element {
   return (
     <div className="landing">
+      <div className="founding-strip">
+        <div className="founding-strip-text">
+          <span className="dot" />
+          <span>
+            <strong>First 50 users</strong> get DEPLOX Pro free for 6 months.
+          </span>
+        </div>
+        <Link to="/founding" className="cta-link">
+          Claim a slot →
+        </Link>
+      </div>
+
       <section className="hero">
         <div>
           <h1>
@@ -107,6 +120,54 @@ export function LandingPage(): JSX.Element {
         />
       </section>
 
+      <section className="pricing-preview">
+        <h2>Pay in rupees. Stay in control.</h2>
+        <p>
+          Vercel charges $20/mo and bills in USD. We charge ₹199/mo and bill in INR via UPI.
+          Same features, less paperwork. No international card required.
+        </p>
+        <div className="pricing-preview-grid">
+          <div className="pricing-preview-card">
+            <div className="name">Free</div>
+            <div className="price">₹0</div>
+            <ul>
+              <li>7 projects</li>
+              <li>50 GB egress / month</li>
+              <li>Always-on runtime</li>
+              <li>Encrypted env vars</li>
+            </ul>
+          </div>
+          <div className="pricing-preview-card pro">
+            <div className="name">Pro · recommended</div>
+            <div className="price">₹199/mo</div>
+            <ul>
+              <li>25 projects</li>
+              <li>500 GB egress / month</li>
+              <li>Free custom domain</li>
+              <li>Priority builds</li>
+            </ul>
+          </div>
+          <div className="pricing-preview-card">
+            <div className="name">Team</div>
+            <div className="price">₹999/mo</div>
+            <ul>
+              <li>Unlimited projects</li>
+              <li>5 TB egress / month</li>
+              <li>Unlimited collaborators</li>
+              <li>Audit logs</li>
+            </ul>
+          </div>
+        </div>
+        <div className="pricing-preview-cta">
+          <Link to="/pricing" className="cta-primary">
+            Compare plans in detail <IconArrowRight size={14} />
+          </Link>
+          <Link to="/founding" className="cta-secondary" style={{ marginLeft: 16 }}>
+            Or claim a free Pro slot →
+          </Link>
+        </div>
+      </section>
+
       <section className="boundaries">
         <h2>What DEPLOX is not.</h2>
         <p className="muted" style={{ marginBottom: 24 }}>
@@ -125,18 +186,21 @@ export function LandingPage(): JSX.Element {
           </ul>
         </div>
         <p className="faint small" style={{ marginTop: 24 }}>
-          Full list in <Link to="/docs/DEPLOX_IDEA" className="link">DEPLOX_IDEA.md</Link>.
+          Full list in <Link to="/pricing" className="link">Pricing &amp; Boundaries</Link>.
         </p>
       </section>
 
       <section style={{ padding: '60px 0 0', textAlign: 'center' }}>
         <h2 style={{ fontSize: 28, marginBottom: 12 }}>Ready to deploy?</h2>
         <p className="muted" style={{ marginBottom: 24 }}>
-          Free tier available. No credit card required.
+          Free tier available. No credit card required. Pay with UPI when you're ready.
         </p>
         <a className="cta-primary" href="/auth/github?return_to=/dashboard">
           Get started <IconArrowRight size={14} />
         </a>
+        <div style={{ marginTop: 16, fontSize: 12, color: 'var(--color-fg-faint)' }}>
+          <IconBolt size={11} /> Bonus: first 50 signups get Pro free for 6 months.
+        </div>
       </section>
     </div>
   );

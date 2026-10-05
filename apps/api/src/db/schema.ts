@@ -22,6 +22,8 @@ import {
   bigint,
   uniqueIndex,
   index,
+  jsonb,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // =============================================================================
@@ -40,6 +42,15 @@ export const users = pgTable(
     /** AES-256-GCM ciphertext. Stored so we can make authenticated GitHub
      *  calls on behalf of the user (avoids anonymous 60-req/hour rate limit). */
     githubAccessTokenEncrypted: text('github_access_token_encrypted'),
+    // ---- billing columns (migration 0004) ----
+    plan: text('plan').notNull().default('free'),
+    planStatus: text('plan_status').notNull().default('none'),
+    planRenewsAt: timestamp('plan_renews_at', { withTimezone: true }),
+    planCancelAtPeriodEnd: boolean('plan_cancel_at_period_end').notNull().default(false),
+    razorpayCustomerId: text('razorpay_customer_id'),
+    razorpaySubscriptionId: text('razorpay_subscription_id'),
+    isFoundingMember: boolean('is_founding_member').notNull().default(false),
+    foundingSlotNumber: integer('founding_slot_number'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({
@@ -166,3 +177,117 @@ export type DeploymentRow = typeof deployments.$inferSelect;
 export type NewDeploymentRow = typeof deployments.$inferInsert;
 export type EnvVarRow = typeof envVars.$inferSelect;
 export type NewEnvVarRow = typeof envVars.$inferInsert;
+
+// =============================================================================
+// subscriptions (migration 0004)
+// =============================================================================
+
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    razorpaySubscriptionId: text('razorpay_subscription_id').notNull().unique(),
+    razorpayPlanId: text('razorpay_plan_id').notNull(),
+    plan: text('plan').notNull(), // 'pro' | 'team'
+    status: text('status').notNull(),
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    amountPaise: integer('amount_paise').notNull(),
+    currency: text('currency').notNull().default('INR'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('subscriptions_user_idx').on(t.userId),
+    statusIdx: index('subscriptions_status_idx').on(t.status),
+  }),
+);
+
+export type SubscriptionRow = typeof subscriptions.$inferSelect;
+export type NewSubscriptionRow = typeof subscriptions.$inferInsert;
+
+// =============================================================================
+// invoices (migration 0004)
+// =============================================================================
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id').references(() => subscriptions.id, { onDelete: 'set null' }),
+    razorpayInvoiceId: text('razorpay_invoice_id').unique(),
+    amountPaise: integer('amount_paise').notNull(),
+    gstPaise: integer('gst_paise').notNull(),
+    totalPaise: integer('total_paise').notNull(),
+    status: text('status').notNull(),
+    invoiceUrl: text('invoice_url'),
+    invoiceNumber: text('invoice_number'),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('invoices_user_idx').on(t.userId),
+  }),
+);
+
+export type InvoiceRow = typeof invoices.$inferSelect;
+export type NewInvoiceRow = typeof invoices.$inferInsert;
+
+// =============================================================================
+// founding_members (migration 0004)
+// =============================================================================
+
+export const foundingMembers = pgTable(
+  'founding_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    email: text('email').notNull(),
+    githubUsername: text('github_username').notNull(),
+    useCase: text('use_case').notNull(),
+    slotNumber: integer('slot_number').notNull().unique(),
+    status: text('status').notNull().default('pending'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).defaultNow().notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    freeUntil: timestamp('free_until', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    emailIdx: index('founding_members_email_idx').on(t.email),
+    userIdx: index('founding_members_user_idx').on(t.userId),
+    statusIdx: index('founding_members_status_idx').on(t.status),
+  }),
+);
+
+export type FoundingMemberRow = typeof foundingMembers.$inferSelect;
+export type NewFoundingMemberRow = typeof foundingMembers.$inferInsert;
+
+// =============================================================================
+// billing_events (migration 0004) — append-only audit log
+// =============================================================================
+
+export const billingEvents = pgTable(
+  'billing_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    source: text('source').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload').notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('billing_events_user_idx').on(t.userId),
+    typeIdx: index('billing_events_type_idx').on(t.eventType),
+  }),
+);
+
+export type BillingEventRow = typeof billingEvents.$inferSelect;
+export type NewBillingEventRow = typeof billingEvents.$inferInsert;

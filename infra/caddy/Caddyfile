@@ -1,25 +1,25 @@
+# DEPLOX Caddyfile — reverse proxy with dynamic per-hostname routing.
+#
+# Public traffic enters on :8000 (plain HTTP; Cloudflare Tunnel terminates
+# TLS at the edge, so Caddy only needs HTTP). Two layers:
+#
+#   1. The :8000 site block below is the default catch-all — anything that
+#      doesn't match a more specific route falls through to the dashboard.
+#
+#   2. Per-app hostnames (e.g. myapp.deplox.site) are added at runtime by
+#      the DEPLOX API via POST /id/deplox-domain-<id>. Caddy auto-reorders
+#      routes so static host matchers win over the catch-all.
+
+# Global options: admin API on :2019 (used by the API to register/unregister
+# routes dynamically).
 {
-  # DEPLOX Caddyfile — Stage 2 reverse proxy + on-demand TLS.
-  #
-  # Public traffic enters on :8000. Caddy matches:
-  #   - exact custom domains (api maps them to the assigned runtime port)
-  #   - the wildcard *.localhost for local dev (port-mapped preview URLs)
-  #
-  # On-demand TLS is enabled for any custom domain that resolves to this
-  # server. In production this requires Caddy to be reachable on :80/:443
-  # with a public IP, and DEPLOX_CADDY_ADMIN_URL pointed at :2019.
-
-  admin localhost:2019
-
-  # Default site: fall through to the dashboard.
-  :8000 {
-    reverse_proxy localhost:5173
-  }
-
-  # On-demand HTTPS for any hostname the API has registered.
-  # The DEPLOX API POSTs to /load to add new entries and /unload to remove
-  # them. Each one routes to the corresponding runtime container's host port.
+	admin localhost:2019
 }
 
-# Helper snippets used by Caddy's on-demand TLS plumbing are generated at
-# runtime by the API; see services/deployment-orchestrator.ts.
+# Default site — fall through to the DEPLOX dashboard.
+# Note: from inside the Caddy container, the DEPLOX host's services are
+# reachable via Docker Desktop's host.docker.internal alias (not localhost,
+# which would resolve to the container's own loopback).
+:8000 {
+	reverse_proxy host.docker.internal:5173
+}

@@ -53,6 +53,15 @@ const Schema = z.object({
   DEPLOX_CADDY_ADMIN_URL: z.string().url().default('http://localhost:2019'),
   DEPLOX_CADDY_API_TOKEN: z.string().default(''),
 
+  // Razorpay (Phase 4d — billing subscriptions + founding member auto-upgrade).
+  // Leave empty for now; the backend gracefully degrades to a mock checkout URL
+  // when these aren't set, so the frontend can develop end-to-end.
+  DEPLOX_RAZORPAY_KEY_ID: z.string().default(''),
+  DEPLOX_RAZORPAY_KEY_SECRET: z.string().default(''),
+  DEPLOX_RAZORPAY_WEBHOOK_SECRET: z.string().default(''),
+  DEPLOX_RAZORPAY_PLAN_PRO: z.string().default(''),
+  DEPLOX_RAZORPAY_PLAN_TEAM: z.string().default(''),
+
   // Logging
   DEPLOX_LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
