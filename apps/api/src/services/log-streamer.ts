@@ -1,16 +1,27 @@
 /**
- * Per-deployment in-memory log buffer + SSE fan-out.
+ * Per-deployment log buffer + SSE fan-out + DB persistence.
  *
- * Two responsibilities:
- *   1. Append build/runtime log lines to a per-deployment buffer
- *      (also persisted to `deployments.build_logs` on completion).
- *   2. Stream those lines to any currently-attached SSE client.
+ * Three responsibilities:
+ *   1. Persist every log line to the database (deployments.build_logs) so the
+ *      UI shows real-time status on poll, not just the SSE stream.
+ *   2. Keep an in-memory buffer for the SSE stream (capped at 5,000 lines) so
+ *      newly-attached subscribers can replay recent lines.
+ *   3. Update the deployment status in BOTH the in-memory stream and the DB
+ *      so a fresh page load sees the current state, not "queued" forever.
  *
- * For Stage 2 we keep things in-memory + DB; a future Stage 3 deployment can
- * promote this to Redis pub/sub for horizontal scale.
+ * Bug fixed in Phase 4d: previously setStatus only updated the in-memory stream.
+ * The DB stayed at 'queued' until terminal failure. UI polls /api/deployments/:id
+ * which reads from DB, so the UI always showed 'queued'. Now setStatus and
+ * appendLog are DB-backed.
  */
 
 import type { DeploymentStatus, LogStreamEvent } from '@deplox/shared-types';
+import { eq } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { deployments } from '../db/schema.js';
+import { childLogger } from '@deplox/shared-logger';
+
+const log = childLogger({ component: 'log-streamer' });
 
 interface Subscription {
   readonly id: string;
@@ -41,18 +52,52 @@ export function getOrCreateStream(deploymentId: string): DeploymentStream {
   return s;
 }
 
-export function setStatus(deploymentId: string, status: DeploymentStatus): void {
+/**
+ * Update deployment status. Writes to BOTH:
+ *   - in-memory stream (so SSE subscribers see the change immediately)
+ *   - DB row (so the UI poll sees the change on next fetch)
+ *
+ * Awaitable. Errors are logged but never thrown — caller is in a hot path.
+ */
+export async function setStatus(deploymentId: string, status: DeploymentStatus): Promise<void> {
   const s = getOrCreateStream(deploymentId);
   s.status = status;
   broadcast(deploymentId, { type: 'status', status, ts: new Date().toISOString() });
+
+  try {
+    await db
+      .update(deployments)
+      .set({ status })
+      .where(eq(deployments.id, deploymentId));
+  } catch (err) {
+    log.error({ err, deploymentId, status }, 'failed to persist status to DB');
+  }
 }
 
+/**
+ * Append a log line. Writes to BOTH:
+ *   - in-memory stream (for SSE replay)
+ *   - DB row's build_logs column (for permanent record + UI poll)
+ *
+ * DB writes are fire-and-forget — we don't block the orchestrator on every line.
+ */
 export function appendLog(deploymentId: string, line: string): void {
   const s = getOrCreateStream(deploymentId);
-  // Cap in-memory buffer to last 5,000 lines.
   if (s.lines.length >= 5000) s.lines.shift();
   s.lines.push(line);
   broadcast(deploymentId, { type: 'log', line, ts: new Date().toISOString() });
+
+  // Async DB persist — don't await, but catch errors
+  void persistLogs(deploymentId, s.lines.join('\n')).catch((err) => {
+    log.error({ err, deploymentId }, 'failed to persist log line');
+  });
+}
+
+async function persistLogs(deploymentId: string, joined: string): Promise<void> {
+  await db
+    .update(deployments)
+    .set({ buildLogs: joined })
+    .where(eq(deployments.id, deploymentId));
 }
 
 export function appendError(deploymentId: string, message: string): void {
