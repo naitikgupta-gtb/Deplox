@@ -42,5 +42,8 @@ data/postgres/
 data/redis/
 data/caddy/
 
+# Cloudflare Tunnel credentials (cert.pem + <TUNNEL_ID>.json)
+.cloudflared/
+
 # turbo
 .turbo/
