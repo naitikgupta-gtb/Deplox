@@ -41,6 +41,7 @@ build-cache/
 data/postgres/
 data/redis/
 data/caddy/
+.runlogs/
 
 # Cloudflare Tunnel credentials (cert.pem + <TUNNEL_ID>.json)
 .cloudflared/

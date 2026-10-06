@@ -224,9 +224,14 @@ export class RealDockerProvider implements DockerProvider {
       { stdout: true, stderr: true, follow: true },
       (err: Error | null, stream: NodeJS.ReadableStream | null) => {
         if (err || !stream) return;
-        stream.on('data', (chunk: Buffer) => {
-          const text = redactString(chunk.toString('utf8'));
-          onLog?.({ stream: 'stdout', text });
+        // Some apps write NUL bytes to stdout (e.g. ASCII art padding, or a
+        // buggy `process.stdout.write(buf)`). `Buffer.toString('utf8')` is
+        // strict in modern Node and throws on those — we'd lose the rest of
+        // the log line. Use a stripping decoder via `setEncoding` so invalid
+        // bytes become U+FFFD, and the log-streamer also sanitises NULs.
+        stream.setEncoding('utf8');
+        stream.on('data', (text: string) => {
+          onLog?.({ stream: 'stdout', text: redactString(text) });
         });
         stream.on('error', () => {
           /* swallow */

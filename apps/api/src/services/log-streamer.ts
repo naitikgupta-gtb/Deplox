@@ -23,6 +23,33 @@ import { childLogger } from '@deplox/shared-logger';
 
 const log = childLogger({ component: 'log-streamer' });
 
+/**
+ * Postgres UTF-8 columns reject a few specific byte values that are valid in
+ * raw bytes but not valid Unicode scalar values — most notably 0x00 (NUL).
+ * If a container writes a NUL byte to stdout (often as padding inside ASCII
+ * art, or a buggy `process.stdout.write(buf)`), the NUL makes it into our
+ * log buffer, and the next `persistLogs()` call throws
+ * "invalid byte sequence for encoding UTF8: 0x00". The catch handler then
+ * tries to write the error message into the same broken buffer and we loop
+ * on the same error forever.
+ *
+ * This helper sanitises one line before it enters the buffer:
+ *   - strips 0x00 (NUL) bytes
+ *   - replaces any remaining invalid UTF-8 sequences with U+FFFD
+ *   - strips 0x07 (BEL) and 0x08 (BS) which are also control chars users
+ *     never want to see in a log viewer
+ */
+function sanitizeLogLine(input: string): string {
+  if (!input) return '';
+  // Fast path — already clean.
+  // eslint-disable-next-line no-control-regex
+  if (!/[\u0000\u0007\u0008]/.test(input)) return input;
+  return input
+    .replace(/\u0000/g, '')
+    .replace(/\u0007/g, '')
+    .replace(/\u0008/g, '');
+}
+
 interface Subscription {
   readonly id: string;
   send(event: LogStreamEvent): void;
@@ -82,10 +109,11 @@ export async function setStatus(deploymentId: string, status: DeploymentStatus):
  * DB writes are fire-and-forget — we don't block the orchestrator on every line.
  */
 export function appendLog(deploymentId: string, line: string): void {
+  const safe = sanitizeLogLine(line);
   const s = getOrCreateStream(deploymentId);
   if (s.lines.length >= 5000) s.lines.shift();
-  s.lines.push(line);
-  broadcast(deploymentId, { type: 'log', line, ts: new Date().toISOString() });
+  s.lines.push(safe);
+  broadcast(deploymentId, { type: 'log', line: safe, ts: new Date().toISOString() });
 
   // Async DB persist — don't await, but catch errors
   void persistLogs(deploymentId, s.lines.join('\n')).catch((err) => {
@@ -101,7 +129,7 @@ async function persistLogs(deploymentId: string, joined: string): Promise<void> 
 }
 
 export function appendError(deploymentId: string, message: string): void {
-  broadcast(deploymentId, { type: 'error', message, ts: new Date().toISOString() });
+  broadcast(deploymentId, { type: 'error', message: sanitizeLogLine(message), ts: new Date().toISOString() });
 }
 
 export function completeStream(deploymentId: string, status: DeploymentStatus): void {
