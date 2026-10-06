@@ -19,9 +19,11 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       // Proxy /api and /auth to the Fastify backend so cookies share origin.
-      // The API registers routes at /auth, /health, /webhooks, etc. (no /api
-      // prefix), so we strip /api from the path before forwarding.
-      '/api': { target: API_PROXY, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
+      // The API registers routes with mixed prefixes:
+      //   - /auth/github, /health, /webhooks/*   (root, no /api prefix)
+      //   - /api/projects/*, /api/billing/*      (with /api prefix)
+      // Pass paths through unchanged; the API knows its own URL shape.
+      '/api': { target: API_PROXY, changeOrigin: true },
       '/auth': { target: API_PROXY, changeOrigin: true },
       '/health': { target: API_PROXY, changeOrigin: true },
       // GitHub webhooks — same origin so the X-Hub-Signature-256 payload
