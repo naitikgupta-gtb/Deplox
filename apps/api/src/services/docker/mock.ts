@@ -233,6 +233,12 @@ export class MockDockerProvider implements DockerProvider {
     const tail = opts.tail ?? c.logs.length;
     return c.logs.slice(-tail).join('\n');
   }
+
+  async listAllocatedPorts(): Promise<number[]> {
+    return Array.from(containers.values())
+      .filter((c) => c.running)
+      .map((c) => c.hostPort);
+  }
 }
 
 /** Helper for tests / debug endpoints. */

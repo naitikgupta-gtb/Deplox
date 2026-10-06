@@ -269,4 +269,34 @@ export class RealDockerProvider implements DockerProvider {
       );
     });
   }
+
+  /**
+   * Lists host ports currently published by any container whose name starts
+   * with `deplox-` (our own runtime containers) AND that is running. Port
+   * bindings are read straight from the Docker API, so this is the ground
+   * truth even if the in-memory port-allocator cache is stale (e.g. after
+   * an API restart, or when containers were started by a previous API
+   * process and outlived it).
+   */
+  async listAllocatedPorts(): Promise<number[]> {
+    const out = new Set<number>();
+    try {
+      // `listContainers` is a runtime method on the Dockerode prototype; the
+      // bundled types don't expose it, so we cast through `unknown`.
+      const containers = await (docker as unknown as {
+        listContainers: (opts: { all?: boolean; filters?: { name?: string[] } }) => Promise<Array<{ Ports?: Array<{ PublicPort?: number }> }>>;
+      }).listContainers({
+        all: false,
+        filters: { name: ['deplox-'] },
+      });
+      for (const c of containers) {
+        for (const p of c.Ports ?? []) {
+          if (p.PublicPort && p.PublicPort > 0) out.add(p.PublicPort);
+        }
+      }
+    } catch {
+      /* Docker unreachable — caller will fall back to DB. */
+    }
+    return Array.from(out);
+  }
 }

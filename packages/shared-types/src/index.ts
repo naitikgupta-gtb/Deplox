@@ -224,4 +224,11 @@ export interface DockerProvider {
   stop(opts: { readonly containerId: string }): Promise<void>;
 
   logs(opts: { readonly containerId: string; readonly tail?: number }): Promise<string>;
+
+  /**
+   * Returns host ports currently published by deplox-managed containers. Used
+   * by the port allocator to recover from a cold start (the in-memory cache
+   * is empty until the next allocatePort() call).
+   */
+  listAllocatedPorts(): Promise<readonly number[]>;
 }

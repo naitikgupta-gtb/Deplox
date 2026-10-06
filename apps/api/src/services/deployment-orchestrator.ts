@@ -120,7 +120,7 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     }));
 
     // -- ALLOCATE PORT ----------------------------------------------------
-    const hostPort = allocatePort();
+    const hostPort = await allocatePort();
     allocatedPort = hostPort;
     appendLog(deploymentId, `[deplox] allocated host port ${hostPort} → container :${defaultPortFor(framework)}`);
 
@@ -313,15 +313,22 @@ export async function rollbackDeployment(
   const envRows = await db.select().from(envVarsTable).where(eq(envVarsTable.projectId, projectId));
   const decryptedEnv = envRows.map((r) => ({ key: r.key, value: decrypt(r.encryptedValue) }));
 
-  const hostPort = allocatePort();
-  const runResult = await provider.run({
-    deploymentId: newRow.id,
-    imageTag: target.imageTag,
-    hostPort,
-    envVars: decryptedEnv,
-    framework: (target.framework ?? 'static') as import('@deplox/shared-types').Framework,
-    onLog: ({ text }) => appendLog(newRow.id, text),
-  });
+  const hostPort = await allocatePort();
+  let runResult: import('@deplox/shared-types').RunResult;
+  try {
+    runResult = await provider.run({
+      deploymentId: newRow.id,
+      imageTag: target.imageTag,
+      hostPort,
+      envVars: decryptedEnv,
+      framework: (target.framework ?? 'static') as import('@deplox/shared-types').Framework,
+      onLog: ({ text }) => appendLog(newRow.id, text),
+    });
+  } catch (err) {
+    // Free the port we just allocated so it doesn't get stuck in the in-use set.
+    releasePort(hostPort);
+    throw err;
+  }
 
   const publicUrl = buildPublicUrl(hostPort, project.customDomain);
 
