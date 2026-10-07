@@ -67,17 +67,21 @@ CMD ["node", "server.js"]
 `;
     case 'node':
       // Ember, Express, Fastify, Koa, etc. We ship a tiny entry-point
-      // discovery shell script as a separate file in the image, then run it
-      // as CMD. This keeps the inline JSON-escaped CMD readable and avoids
-      // bash brace-expansion issues that the previous inline approach hit.
-      // We do NOT inject `--host 0.0.0.0` — apps that ignore unknown flags
-      // are lucky, and those that don't (strict Express 5) will crash with
-      // EADDRINUSE or argv errors.
+      // discovery shell script as a separate file in the image, then run
+      // it as CMD. We do NOT inject `--host 0.0.0.0` — apps that ignore
+      // unknown flags are lucky, and those that don't (strict Express 5)
+      // will crash with EADDRINUSE or argv errors.
+      //
+      // We write the script with `RUN printf '...' > /path`. A SINGLE
+      // printf line works in every Dockerfile parser — no heredoc support
+      // required (BuildKit needed for `<<EOF`; the classic builder
+      // silently produces a 0-byte file). `\n` inside the single-quoted
+      // string is interpreted by printf, not the shell.
       const entryScript = [
         '#!/bin/sh',
         'set +e',
-        '# 1) npm start if scripts.start exists in package.json',
-        'if grep -qE \'"start"[[:space:]]*:[[:space:]]*[^,}]+\' package.json 2>/dev/null; then',
+        "# 1) npm start if scripts.start exists in package.json",
+        "if grep -qE '\"start\"[[:space:]]*:[[:space:]]*[^,}]+' package.json 2>/dev/null; then",
         '  echo "[deplox] starting via npm start"',
         '  exec npm start',
         'fi',
@@ -88,8 +92,8 @@ CMD ["node", "server.js"]
         '    exec node "$f"',
         '  fi',
         'done',
-        '# 3) package.json `main` field (parse with awk, no JS to avoid brace-expansion bugs)',
-        'main=$(awk \'/^[[:space:]]*"main"[[:space:]]*:/ { gsub(/[,]/, ""); match($0, /"main"[[:space:]]*:[[:space:]]*"[^"]+"/); if (RLENGTH > 0) { s = substr($0, RSTART, RLENGTH); gsub(/"main"[[:space:]]*:[[:space:]]*"/, "", s); print s; exit } }\' package.json 2>/dev/null)',
+        "# 3) package.json 'main' field (parse with awk)",
+        "main=$(awk -F'\"' '/^[[:space:]]*\"main\"[[:space:]]*:/ { for(i=1;i<=NF;i++) if($i==\"main\"){ print $(i+2); exit } }' package.json 2>/dev/null)",
         'if [ -n "$main" ] && [ -f "$main" ]; then',
         '  echo "[deplox] starting node $main (from package.json:main)"',
         '  exec node "$main"',
@@ -104,25 +108,25 @@ CMD ["node", "server.js"]
         'echo no-entry-point-found',
         'exit 1',
       ].join('\n');
+      // The shell single-quoted string in the RUN line must contain
+      // literally-newline-free content (one Dockerfile line = one shell
+      // command). We replace real newlines in the script with the escape
+      // sequence `\n` and use printf's `%b` format, which interprets
+      // backslash-escape sequences in the argument. Single-quoted shell
+      // strings don't process the backslash, so `\n` reaches printf as
+      // the two characters backslash + n, and printf turns them into
+      // real newlines.
+      const printfArg = entryScript
+        .replace(/\\/g, '\\\\')   // escape any literal backslashes first
+        .replace(/'/g, `'\\''`)   // then escape single-quotes for the shell
+        .replace(/\n/g, '\\n');   // finally replace newlines with escape seq
       return [
         'FROM node:20-alpine',
         'WORKDIR /app',
         'COPY package*.json ./',
         'RUN npm install --omit=dev || true',
         'COPY . .',
-        // Ship the entry-point script as a real file (not inline) — much
-        // easier to read, and avoids all the JSON-escape / brace-expansion
-        // gotchas of an inline `CMD ["sh", "-c", "..."]` chain.
-        //
-        // We use the classic `RUN cat > file << 'EOF'` heredoc inside a
-        // RUN command, NOT the newer `COPY <<'EOF'` BuildKit syntax. The
-        // latter requires BuildKit-enabled builder, but our `deplox/build-runner`
-        // image is built without BuildKit and `COPY <<'EOF'` silently fails
-        // with "no source files were specified" — which then makes the
-        // downstream container.start fail with a misleading 404 ("no such
-        // image"). Heredoc-inside-RUN works in every builder.
-        `RUN cat > /usr/local/bin/deplox-start <<'DEPLOX_START_EOF'\n${entryScript}\nDEPLOX_START_EOF`,
-        'RUN chmod +x /usr/local/bin/deplox-start',
+        `RUN printf '%b' '${printfArg}' > /usr/local/bin/deplox-start && chmod +x /usr/local/bin/deplox-start`,
         'EXPOSE 3000',
         'USER node',
         'CMD ["/usr/local/bin/deplox-start"]',
