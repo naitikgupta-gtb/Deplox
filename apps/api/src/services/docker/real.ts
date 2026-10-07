@@ -26,22 +26,60 @@ const BUILD_IMAGE = 'deplox/build-runner:latest'; // pre-baked in infra/docker/b
 async function generateDockerfile(
   framework: Framework,
   sourceDir: string,
+  envVars: ReadonlyArray<{ key: string; value: string }> = [],
 ): Promise<string> {
-  const tmpl = await loadTemplate(framework);
+  let tmpl = await loadTemplate(framework, envVars);
   const target = join(sourceDir, 'Dockerfile.deplox');
   await writeFile(target, tmpl, 'utf8');
   return target;
 }
 
-async function loadTemplate(framework: Framework): Promise<string> {
+async function loadTemplate(
+  framework: Framework,
+  envVars: ReadonlyArray<{ key: string; value: string }> = [],
+): Promise<string> {
   // In a real install we read from a known absolute path; here we inline a
   // minimal generator that produces correct output for the most common case.
   switch (framework) {
-    case 'react':
+    case 'react': {
+      // For Vite builds, we need env vars to be present in the BUILD stage
+      // (not just runtime) because Vite inlines `import.meta.env.VITE_*`
+      // references at build time. The user often forgets the `VITE_` prefix
+      // when adding env vars in the UI, so we auto-derive the VITE_-prefixed
+      // form from any non-prefixed key. If the user already provided a
+      // VITE_-prefixed key, we use that directly.
+      //
+      // The orchestrator passes each env var as a Docker --build-arg with
+      // the same name as the user's key. The Dockerfile declares matching
+      // `ARG` lines (one per env var) and `ENV` lines (one per VITE_ alias)
+      // so Vite sees them at build time.
+      const argLines: string[] = [];
+      const envLines: string[] = [];
+      for (const v of envVars) {
+        if (!v.key) continue;
+        // Sanitize: Docker build-arg names must match [a-zA-Z_][a-zA-Z0-9_]*
+        const safeKey = v.key.replace(/[^A-Za-z0-9_]/g, '_');
+        argLines.push(`ARG ${safeKey}`);
+        if (v.key.startsWith('VITE_')) {
+          envLines.push(`ENV ${safeKey}=\$${safeKey}`);
+        } else {
+          // Auto-derive VITE_<KEY> alias for the user's plain key, so
+          // `import.meta.env.VITE_SUPABASE_URL` works whether the user typed
+          // VITE_SUPABASE_URL or just SUPABASE_URL.
+          const viteAlias = `VITE_${safeKey}`;
+          argLines.push(`ARG ${viteAlias}`);
+          envLines.push(`ENV ${viteAlias}=\$${viteAlias}`);
+          envLines.push(`ENV ${safeKey}=\$${viteAlias}`);
+        }
+      }
+      const argBlock = argLines.join('\n');
+      const envExportBlock = envLines.join('\n');
       return `FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci || npm install
+${argBlock}
+${envExportBlock}
 COPY . .
 RUN npm run build
 FROM nginx:1.27-alpine
@@ -49,6 +87,7 @@ COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;
+    }
     case 'nextjs':
       return `FROM node:20-alpine AS build
 WORKDIR /app
@@ -173,12 +212,13 @@ export class RealDockerProvider implements DockerProvider {
     deploymentId: string;
     sourceDir: string;
     framework: Framework;
+    envVars?: ReadonlyArray<{ key: string; value: string }>;
     onLog?: (chunk: LogChunk) => void;
   }): Promise<BuildResult> {
     const start = Date.now();
-    const { deploymentId, sourceDir, framework, onLog } = opts;
+    const { deploymentId, sourceDir, framework, onLog, envVars = [] } = opts;
 
-    await generateDockerfile(framework, sourceDir);
+    await generateDockerfile(framework, sourceDir, envVars);
     const imageTag = `deplox/${deploymentId}:${Date.now()}`;
 
     // Build a tar archive ourselves. Dockerode's built-in tar packer can choke
@@ -200,12 +240,32 @@ export class RealDockerProvider implements DockerProvider {
         timeout: 60 * 1000,
       });
 
+      // Build args: pass each env var to Docker so the Dockerfile can
+      // `ARG <KEY>` and `ENV VITE_<KEY>=...` it. The Dockerfile generator
+      // (loadTemplate) already declared matching ARG lines for the
+      // framework, so any extra keys here will fail the build with
+      // "one or more build args [...] were not consumed" — a strong
+      // signal of a typo in the Dockerfile template.
+      const buildargs: Record<string, string> = {};
+      for (const v of envVars) {
+        if (!v.key) continue;
+        const safeKey = v.key.replace(/[^A-Za-z0-9_]/g, '_');
+        // Always also expose as VITE_-prefixed alias so the user doesn't
+        // have to remember the prefix. `VITE_X` keys override the auto-derivation
+        // (so a deliberate `VITE_FOO=bar` wins over plain `FOO=bar`).
+        if (v.key.startsWith('VITE_')) {
+          buildargs[`VITE_${safeKey.slice(5)}`] = v.value;
+        }
+        buildargs[safeKey] = v.value;
+      }
+
       const buildStream = await docker.buildImage(tarPath, {
         dockerfile: 'Dockerfile.deplox',
         t: imageTag,
         // `src` is required when we pass a file path so Dockerode reads it as a
         // tarball instead of trying to repack a directory.
         src: ['.'],
+        buildargs,
       });
 
       await new Promise<void>((resolve, reject) => {

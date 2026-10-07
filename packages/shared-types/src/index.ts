@@ -209,6 +209,7 @@ export interface DockerProvider {
     readonly deploymentId: string;
     readonly sourceDir: string;
     readonly framework: Framework;
+    readonly envVars?: ReadonlyArray<{ readonly key: string; readonly value: string }>;
     readonly onLog?: (chunk: LogChunk) => void;
   }): Promise<BuildResult>;
 

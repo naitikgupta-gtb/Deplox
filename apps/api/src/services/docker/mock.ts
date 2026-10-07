@@ -104,6 +104,7 @@ export class MockDockerProvider implements DockerProvider {
     deploymentId: string;
     sourceDir: string;
     framework: Framework;
+    envVars?: ReadonlyArray<{ key: string; value: string }>;
     onLog?: (chunk: LogChunk) => void;
   }): Promise<BuildResult> {
     const start = Date.now();

@@ -88,12 +88,31 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       .set({ framework })
       .where(eq(deployments.id, deploymentId));
 
+    // -- DECRYPT ENV VARS -------------------------------------------------
+    // Need to do this BEFORE the build so we can pass them as build-args to
+    // Docker; Vite-bundled frontends (react/next) inline `import.meta.env.*`
+    // references at build time.
+    const envRows = await db
+      .select()
+      .from(envVarsTable)
+      .where(eq(envVarsTable.projectId, project.id));
+    const decryptedEnv = envRows.map((r) => ({
+      key: r.key,
+      value: decrypt(r.encryptedValue),
+    }));
+
     // -- BUILD ------------------------------------------------------------
     setStatus(deploymentId, 'building');
     const buildResult = await provider.build({
       deploymentId,
       sourceDir: clone.workdir,
       framework,
+      // Env vars are decrypted above and need to reach the build stage so
+      // that Vite-bundled frontends (react/next) can inline `import.meta.env.*`
+      // references. The provider forwards them as Docker build-args; the
+      // generated Dockerfile declares matching `ARG`/`ENV` lines and also
+      // auto-derives `VITE_<KEY>` from any non-prefixed key for Vite apps.
+      envVars: decryptedEnv,
       onLog: ({ stream, text }) => {
         appendLog(deploymentId, text);
       },
@@ -108,16 +127,6 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       .update(deployments)
       .set({ imageTag: buildResult.imageTag })
       .where(eq(deployments.id, deploymentId));
-
-    // -- DECRYPT ENV VARS -------------------------------------------------
-    const envRows = await db
-      .select()
-      .from(envVarsTable)
-      .where(eq(envVarsTable.projectId, project.id));
-    const decryptedEnv = envRows.map((r) => ({
-      key: r.key,
-      value: decrypt(r.encryptedValue),
-    }));
 
     // -- ALLOCATE PORT ----------------------------------------------------
     const hostPort = await allocatePort();
