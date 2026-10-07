@@ -68,9 +68,10 @@ CMD ["node", "server.js"]
     case 'node':
       // Ember, Express, Fastify, Koa, etc. We try the package's `start`
       // script first (most projects define one), then fall through to common
-      // entry points. We do NOT inject `--host 0.0.0.0` — apps that ignore
-      // unknown flags are lucky, and those that don't (strict Express 5)
-      // will crash with EADDRINUSE or argv errors.
+      // entry points, then to package.json `main`, then exit 1. We do NOT
+      // inject `--host 0.0.0.0` — apps that ignore unknown flags are lucky,
+      // and those that don't (strict Express 5) will crash with EADDRINUSE
+      // or argv errors.
       return [
         'FROM node:20-alpine',
         'WORKDIR /app',
@@ -79,7 +80,20 @@ CMD ["node", "server.js"]
         'COPY . .',
         'EXPOSE 3000',
         'USER node',
-        'CMD ["sh", "-c", "npm start || node server.js || node index.js || node src/index.js || node src/server.js || node app.js || (echo no-entry-point-found && exit 1)"]',
+        // 1) npm start if defined
+        // 2) common filenames
+        // 3) package.json `main` field
+        // 4) first .js file in /app
+        'CMD ["sh", "-c", "set +e; ' +
+          'start=$(node -e \"try{console.log(require(\\\"./package.json\\\").scripts?.start||\\\"\\\")}catch{console.log(\\\"\\\")}\" 2>/dev/null); ' +
+          'if [ -n \"$start\" ]; then echo \"[deplox] starting via npm start\"; exec npm start; fi; ' +
+          'for f in server.js index.js src/index.js src/server.js app.js dist/index.js dist/server.js src/app.js; do ' +
+          'if [ -f \"$f\" ]; then echo \"[deplox] starting node $f\"; exec node \"$f\"; fi; ' +
+          'done; ' +
+          'main=$(node -e \"try{console.log(require(\\\"./package.json\\\").main||\\\"\\\")}catch{console.log(\\\"\\\")}\" 2>/dev/null); ' +
+          'if [ -n \"$main\" ] && [ -f \"$main\" ]; then echo \"[deplox] starting node $main (from package.json:main)\"; exec node \"$main\"; fi; ' +
+          'echo no-entry-point-found; exit 1' +
+          '"]',
         '',
       ].join('\n');
     case 'python':
@@ -260,16 +274,27 @@ export class RealDockerProvider implements DockerProvider {
 
   async logs(opts: { containerId: string; tail?: number }): Promise<string> {
     const container = docker.getContainer(opts.containerId);
+    // `container.logs` without `follow: true` returns a fully-buffered
+    // Buffer in current Dockerode — calling `.on()` on it throws and used
+    // to crash the API. Handle both shapes (Buffer OR legacy stream).
     return await new Promise<string>((resolve, reject) => {
       container.logs(
         { stdout: true, stderr: true, tail: opts.tail ?? 100 },
-        (err: Error | null, stream: NodeJS.ReadableStream | null) => {
+        (err: Error | null, data: unknown) => {
           if (err) return reject(err);
-          if (!stream) return resolve('');
-          const chunks: Buffer[] = [];
-          stream.on('data', (c: Buffer) => chunks.push(c));
-          stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-          stream.on('error', (e: Error) => reject(e));
+          if (!data) return resolve('');
+          if (Buffer.isBuffer(data)) {
+            return resolve(data.toString('utf8'));
+          }
+          if (typeof (data as { on?: unknown }).on === 'function') {
+            const stream = data as NodeJS.ReadableStream;
+            const chunks: Buffer[] = [];
+            stream.on('data', (c: Buffer) => chunks.push(c));
+            stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+            stream.on('error', (e: Error) => reject(e));
+            return;
+          }
+          resolve(String(data));
         },
       );
     });
