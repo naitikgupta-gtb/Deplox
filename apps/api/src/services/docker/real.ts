@@ -113,7 +113,15 @@ CMD ["node", "server.js"]
         // Ship the entry-point script as a real file (not inline) — much
         // easier to read, and avoids all the JSON-escape / brace-expansion
         // gotchas of an inline `CMD ["sh", "-c", "..."]` chain.
-        `COPY <<'EOF' /usr/local/bin/deplox-start\n${entryScript}\nEOF`,
+        //
+        // We use the classic `RUN cat > file << 'EOF'` heredoc inside a
+        // RUN command, NOT the newer `COPY <<'EOF'` BuildKit syntax. The
+        // latter requires BuildKit-enabled builder, but our `deplox/build-runner`
+        // image is built without BuildKit and `COPY <<'EOF'` silently fails
+        // with "no source files were specified" — which then makes the
+        // downstream container.start fail with a misleading 404 ("no such
+        // image"). Heredoc-inside-RUN works in every builder.
+        `RUN cat > /usr/local/bin/deplox-start <<'DEPLOX_START_EOF'\n${entryScript}\nDEPLOX_START_EOF`,
         'RUN chmod +x /usr/local/bin/deplox-start',
         'EXPOSE 3000',
         'USER node',
