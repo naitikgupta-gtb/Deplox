@@ -98,12 +98,26 @@ export function ProjectPage(): JSX.Element {
       )}
 
       {project.customDomain === null && latest?.publicUrl && (
-        <div className="banner info" style={{ marginBottom: 24 }}>
+        <div className="banner info public-url-banner" style={{ marginBottom: 24 }}>
           <IconTerminal size={14} />
-          <span>
-            Live preview at <a href={latest.publicUrl} target="_blank" rel="noreferrer" className="link">{latest.publicUrl}</a>.
-            Add one in env vars + DNS for a custom domain.
+          <span style={{ flex: 1 }}>
+            Public URL:&nbsp;
+            <a href={latest.publicUrl} target="_blank" rel="noreferrer" className="link mono">
+              {latest.publicUrl.replace(/^https?:\/\//, '')}
+            </a>
+            <span className="muted small" style={{ marginLeft: 8 }}>
+              (auto-generated — every deplox deployment gets one)
+            </span>
           </span>
+          <a
+            href={latest.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="link small"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <IconExternalLink size={12} /> Open
+          </a>
         </div>
       )}
 

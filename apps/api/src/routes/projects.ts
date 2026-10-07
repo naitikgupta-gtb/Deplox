@@ -19,6 +19,7 @@ import { decrypt } from '../services/encryption.js';
 import {
   registerDomainRoute,
   unregisterDomainRoute,
+  unregisterAutoSubdomainRoute,
 } from '../services/caddy.js';
 
 const cfg = loadConfig();
@@ -263,6 +264,8 @@ export function registerProjectRoutes(app: FastifyInstance): void {
     if (row.customDomain) {
       unregisterDomainRoute(row.id).catch(() => undefined);
     }
+    // Remove the auto-subdomain route too — its hostPort is now freed.
+    unregisterAutoSubdomainRoute(row.id).catch(() => undefined);
 
     await db.delete(projects).where(eq(projects.id, id));
     return reply.code(204).send();

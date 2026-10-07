@@ -12,8 +12,19 @@
 
 # Global options: admin API on :2019 (used by the API to register/unregister
 # routes dynamically).
+#
+# Important: we bind to 0.0.0.0 (not localhost) so Docker Desktop's port
+# mapping on WSL2 actually forwards the host's traffic through. Binding to
+# `localhost` works for in-container tools but the host gets ECONNRESET.
+#
+# `auto_https off` disables Caddy's automatic HTTPS / ACME certificate
+# issuance. Cloudflare Tunnel terminates TLS at the edge, so Caddy only
+# needs to serve plain HTTP. Without this, every `*.deplox.site` request
+# triggers a (doomed) Let's Encrypt ACME challenge and Caddy replies
+# 400 "Client sent an HTTP request to an HTTPS server".
 {
-	admin localhost:2019
+	admin 0.0.0.0:2019
+	auto_https off
 }
 
 # Default site — fall through to the DEPLOX dashboard.

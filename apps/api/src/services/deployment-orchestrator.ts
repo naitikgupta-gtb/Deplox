@@ -29,7 +29,7 @@ import {
   completeStream,
   setStatus,
 } from './log-streamer.js';
-import { registerDomainRoute, unregisterDomainRoute } from './caddy.js';
+import { registerDomainRoute, unregisterDomainRoute, registerAutoSubdomainRoute, unregisterAutoSubdomainRoute } from './caddy.js';
 
 const log = childLogger({ component: 'orchestrator' });
 
@@ -169,7 +169,7 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     }
     appendLog(deploymentId, `[deplox] app is accepting connections on :${hostPort}`);
 
-    const publicUrl = buildPublicUrl(hostPort, project.customDomain);
+    const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.id, project.name);
 
     await db
       .update(deployments)
@@ -206,7 +206,26 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       }
     }
 
-    log.info({ deploymentId, publicUrl }, 'deployment running');
+    // Stage 3.x: ALSO register the auto-generated `*.deplox.site` subdomain
+    // so every deplox-deployed app is publicly reachable out of the box
+    // (even before the user wires up a custom domain). The Cloudflare
+    // tunnel already forwards all `*.deplox.site` to Caddy, so we just need
+    // a Caddy route per running project. Failures are non-fatal.
+    const autoSubdomain = buildAutoSubdomain(project.id, project.name);
+    const autoResult = await registerAutoSubdomainRoute(project.id, autoSubdomain, hostPort);
+    if (!autoResult.ok) {
+      appendLog(
+        deploymentId,
+        `[deplox] caddy route registration failed for ${autoSubdomain}: ${autoResult.message}`,
+      );
+    } else {
+      appendLog(
+        deploymentId,
+        `[deplox] caddy route registered: https://${autoSubdomain} → localhost:${hostPort}`,
+      );
+    }
+
+    log.info({ deploymentId, publicUrl, autoSubdomain }, 'deployment running');
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     appendError(deploymentId, message);
@@ -246,12 +265,19 @@ export async function stopDeployment(deploymentId: string): Promise<void> {
   // The next running deployment for this project will re-register with its
   // own host port; until then, the domain has no upstream.
   const [project] = await db
-    .select({ id: projects.id, customDomain: projects.customDomain })
+    .select({ id: projects.id, customDomain: projects.customDomain, name: projects.name })
     .from(projects)
     .where(eq(projects.id, row.projectId));
   if (project?.customDomain) {
     unregisterDomainRoute(project.id).catch((err) => {
       log.warn({ err, projectId: project.id }, 'caddy unregister failed on stop');
+    });
+  }
+  // Also tear down the auto-subdomain route — the next deploy will
+  // re-register it against whatever new host port is allocated.
+  if (project) {
+    unregisterAutoSubdomainRoute(project.id).catch((err) => {
+      log.warn({ err, projectId: project.id }, 'caddy auto-subdomain unregister failed on stop');
     });
   }
 
@@ -339,7 +365,7 @@ export async function rollbackDeployment(
     throw err;
   }
 
-  const publicUrl = buildPublicUrl(hostPort, project.customDomain);
+  const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.id, project.name);
 
   await db
     .update(deployments)
@@ -357,14 +383,51 @@ export async function rollbackDeployment(
   return newRow.id;
 }
 
-function buildPublicUrl(hostPort: number, customDomain: string | null): string {
+function buildPublicUrl(
+  hostPort: number,
+  customDomain: string | null,
+  projectId: string,
+  projectName: string,
+): string {
   if (customDomain) {
-    // Stage 3.1: serve over HTTPS via Caddy's on-demand TLS.
-    // http:// fallback shown alongside until DNS is configured to point here.
+    // Custom domain takes priority (Caddy issues Let's Encrypt cert on demand).
     return `https://${customDomain}`;
   }
-  // Stage 1/2: direct host port (no reverse proxy needed for local dev).
-  return `http://localhost:${hostPort}`;
+  // Auto-generated `*.deplox.site` subdomain is the public URL of last
+  // resort. It's always wired to the running container via the auto Caddy
+  // route, so the user has a shareable URL the moment the deploy goes
+  // green — no DNS, no domain purchase, no config.
+  return `https://${buildAutoSubdomain(projectId, projectName)}`;
+}
+
+/**
+ * Slugify a project name into a DNS-safe subdomain prefix. The result is
+ * always lowercase, alphanumerics + hyphens only, max 40 chars. If the
+ * project name has nothing alphanumeric, falls back to `app`.
+ */
+function slugifyName(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return base || 'app';
+}
+
+/**
+ * Generate the `*.deplox.site` subdomain for a project. Always
+ * deterministically derived from `(projectId, projectName)`, so re-running
+ * a deploy produces the same subdomain (no churn, no broken links).
+ *
+ * Format: `<name-slug>-<8-char-id-suffix>.deplox.site`. The id suffix
+ * guarantees uniqueness when two projects have the same name (e.g. two
+ * "demo" projects).
+ */
+export function buildAutoSubdomain(projectId: string, projectName: string): string {
+  const slug = slugifyName(projectName);
+  // Strip the dashes so the suffix is a single 8-char block.
+  const suffix = projectId.replace(/-/g, '').slice(0, 8).toLowerCase();
+  return `${slug}-${suffix}.deplox.site`;
 }
 
 async function collectLogs(deploymentId: string): Promise<string> {

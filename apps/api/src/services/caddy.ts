@@ -40,6 +40,15 @@ function routeId(projectId: string): string {
   return `deplox-domain-${projectId}`;
 }
 
+// Separate route ID for the auto-generated `*.deplox.site` subdomain that
+// every running deployment gets by default (e.g. `velvet-brew.deplox.site`).
+// Using a distinct id lets a project have BOTH a custom domain AND the
+// deplox.site subdomain live at the same time — important so users can
+// share the deplox.site URL while they finish pointing a real domain.
+function autoRouteId(projectId: string): string {
+  return `deplox-auto-${projectId}`;
+}
+
 // =============================================================================
 // HTTP helpers
 // =============================================================================
@@ -94,15 +103,38 @@ async function adminRequest(opts: AdminOpts): Promise<AdminResult> {
   return { ok: true, status: res.status, message: text };
 }
 
+/**
+ * Find the routes-array index of a route by its @id, or null if not present.
+ * Used by unregister* so we can DELETE the right index without disturbing
+ * other dynamic routes.
+ */
+async function findRouteIndex(id: string): Promise<number | null> {
+  const list = await adminRequest({
+    method: 'GET',
+    path: '/config/apps/http/servers/srv0/routes/',
+  });
+  if (!list.ok) return null;
+  let routes: Array<{ '@id'?: string }>;
+  try {
+    routes = JSON.parse(list.message) as Array<{ '@id'?: string }>;
+  } catch {
+    return null;
+  }
+  const idx = routes.findIndex((r) => r['@id'] === id);
+  return idx >= 0 ? idx : null;
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
 
 /**
- * Registers (or updates) a route for a custom domain pointing at a host port.
+ * Registers a route for a custom domain pointing at a host port.
  *
- * Caddy's `POST /id/<route-id>` will REPLACE any existing object with that id,
- * so this is safe to call repeatedly with a new hostPort after a deploy.
+ * Implementation note: Caddy's `POST /id/<id>` only works for objects that
+ * already exist; for new routes we POST the route to the routes collection
+ * at `/config/apps/http/servers/srv0/routes/`. Caddy auto-orders routes so
+ * static host matchers win over the catch-all.
  */
 export async function registerDomainRoute(
   projectId: string,
@@ -120,12 +152,63 @@ export async function registerDomainRoute(
     ],
     terminal: true,
   };
-  return adminRequest({ method: 'POST', path: `/id/${route['@id']}`, body: route });
+  return adminRequest({
+    method: 'POST',
+    path: '/config/apps/http/servers/srv0/routes/',
+    body: route,
+  });
 }
 
 /** Removes the route for a project's custom domain (no-op if it doesn't exist). */
 export async function unregisterDomainRoute(projectId: string): Promise<AdminResult> {
-  return adminRequest({ method: 'DELETE', path: `/id/${routeId(projectId)}` });
+  const idx = await findRouteIndex(routeId(projectId));
+  if (idx === null) return { ok: true, status: 204, message: 'route not present, nothing to do' };
+  return adminRequest({
+    method: 'DELETE',
+    path: `/config/apps/http/servers/srv0/routes/${idx}`,
+  });
+}
+
+/**
+ * Registers the auto-generated `*.deplox.site` subdomain route for a project.
+ * Called on every successful deploy so users always have a publicly
+ * reachable URL even before they wire up a custom domain.
+ *
+ * Cloudflare Tunnel's wildcard ingress (see ~/.cloudflared/config.yml) means
+ * ANY `<anything>.deplox.site` request is already forwarded to Caddy :8000.
+ * All we need to do is add the per-hostname reverse-proxy route here.
+ */
+export async function registerAutoSubdomainRoute(
+  projectId: string,
+  subdomain: string,
+  hostPort: number,
+): Promise<AdminResult> {
+  const route: CaddyRoute = {
+    '@id': autoRouteId(projectId),
+    match: [{ host: [subdomain] }],
+    handle: [
+      {
+        handler: 'reverse_proxy',
+        upstreams: [{ dial: `localhost:${hostPort}` }],
+      },
+    ],
+    terminal: true,
+  };
+  return adminRequest({
+    method: 'POST',
+    path: '/config/apps/http/servers/srv0/routes/',
+    body: route,
+  });
+}
+
+/** Removes the auto-subdomain route for a project. */
+export async function unregisterAutoSubdomainRoute(projectId: string): Promise<AdminResult> {
+  const idx = await findRouteIndex(autoRouteId(projectId));
+  if (idx === null) return { ok: true, status: 204, message: 'route not present, nothing to do' };
+  return adminRequest({
+    method: 'DELETE',
+    path: `/config/apps/http/servers/srv0/routes/${idx}`,
+  });
 }
 
 /** Returns true if Caddy's admin API is reachable. */
@@ -136,21 +219,31 @@ export async function pingCaddy(): Promise<boolean> {
 
 /**
  * On API startup, re-register Caddy routes for every currently-running
- * deployment with a custom domain. Failures here are non-fatal — Caddy may
- * not be running locally, in which case the user is still served via the
- * direct host port.
+ * deployment. This covers BOTH the custom domain (if any) AND the
+ * auto-generated `*.deplox.site` subdomain that every deployment gets by
+ * default. Failures here are non-fatal — Caddy may not be running locally,
+ * in which case the user is still served via the direct host port.
+ *
+ * Also backfills `deployments.public_url` for running rows that still
+ * point at `http://localhost:<port>` (pre-auto-subdomain deployments).
+ * One-time migration so the dashboard immediately shows the public URL
+ * without requiring a redeploy.
  */
 export async function primeCaddyRoutes(): Promise<void> {
   // Lazy-import to avoid a circular dep with db client at module init.
   const { eq, and, isNotNull } = await import('drizzle-orm');
   const { db } = await import('../db/client.js');
   const { deployments, projects } = await import('../db/schema.js');
+  const { buildAutoSubdomain } = await import('./deployment-orchestrator.js');
 
   const rows = await db
     .select({
+      deploymentId: deployments.id,
       projectId: projects.id,
+      projectName: projects.name,
       customDomain: projects.customDomain,
       hostPort: deployments.hostPort,
+      publicUrl: deployments.publicUrl,
       deploymentStatus: deployments.status,
     })
     .from(deployments)
@@ -158,18 +251,39 @@ export async function primeCaddyRoutes(): Promise<void> {
     .where(
       and(
         eq(deployments.status, 'running'),
-        isNotNull(projects.customDomain),
         isNotNull(deployments.hostPort),
       ),
     );
 
   log.info({ count: rows.length }, 'priming caddy routes for running deployments');
   for (const row of rows) {
-    if (row.customDomain && row.hostPort) {
+    if (!row.hostPort) continue;
+
+    // 1) Custom domain (if any) — keep its existing route registered.
+    if (row.customDomain) {
       const result = await registerDomainRoute(row.projectId, row.customDomain, row.hostPort);
       if (!result.ok) {
-        log.warn({ projectId: row.projectId, domain: row.customDomain }, 'failed to prime caddy route');
+        log.warn({ projectId: row.projectId, domain: row.customDomain }, 'failed to prime custom-domain caddy route');
       }
+    }
+
+    // 2) Auto-generated deplox.site subdomain (always).
+    const subdomain = buildAutoSubdomain(row.projectId, row.projectName);
+    const result = await registerAutoSubdomainRoute(row.projectId, subdomain, row.hostPort);
+    if (!result.ok) {
+      log.warn({ projectId: row.projectId, subdomain }, 'failed to prime auto-subdomain caddy route');
+    }
+
+    // 3) Backfill public_url: any running deployment still pointing at
+    //    http://localhost:<port> gets upgraded to the auto subdomain. The
+    //    custom-domain branch is left alone (its URL was correct already).
+    if (!row.customDomain && row.publicUrl && row.publicUrl.startsWith('http://localhost:')) {
+      const newUrl = `https://${subdomain}`;
+      await db
+        .update(deployments)
+        .set({ publicUrl: newUrl })
+        .where(eq(deployments.id, row.deploymentId));
+      log.info({ deploymentId: row.deploymentId, newUrl }, 'backfilled public_url with auto subdomain');
     }
   }
 }
