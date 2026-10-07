@@ -127,20 +127,30 @@ export async function detectFramework(repoDir: string): Promise<Framework> {
   );
 }
 
-/** Returns the port the framework's dev/build server is expected to listen on. */
+/**
+ * Returns the port the framework's **runtime** container is expected to
+ * listen on. This is what the orchestrator publishes to the host via
+ * `docker run --expose <port>` — so it MUST match the EXPOSE line of the
+ * runtime stage of the generated Dockerfile.
+ *
+ * Important: the React template ships a 2-stage build where the runtime is
+ * `nginx:1.27-alpine` (port 80), not a Node dev server. Returning 3000 here
+ * would publish 3000→host while nginx is on 80, and the orchestrator's
+ * health check would never see a listening socket.
+ */
 export function defaultPortFor(framework: Framework): number {
   switch (framework) {
     case 'react':
-      return 3000;
-    case 'nextjs':
-      return 3000;
-    case 'node':
-      return 3000;
-    case 'python':
-      return 8000;
-    case 'go':
-      return 8080;
+      return 80; // runtime = nginx:1.27-alpine serving /app/dist
     case 'static':
-      return 80;
+      return 80; // runtime = nginx:1.27-alpine serving repo root
+    case 'nextjs':
+      return 3000; // runtime = node standalone server (next start)
+    case 'node':
+      return 3000; // runtime = node app (express/fastify/koa/...)
+    case 'python':
+      return 8000; // runtime = uvicorn --port 8000
+    case 'go':
+      return 8080; // runtime = /app binary, listens on 8080
   }
 }
