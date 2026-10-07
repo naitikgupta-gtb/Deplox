@@ -9,6 +9,7 @@ import {
   IconRefresh,
   IconRocket,
   IconTerminal,
+  IconTrash,
   IconZap,
 } from '../components/Icon';
 
@@ -234,6 +235,29 @@ function EnvEditor({
     }
   }
 
+  async function clearAll(): Promise<void> {
+    const count = rows_.filter((r) => r.key).length;
+    if (count === 0) return;
+    const ok = window.confirm(
+      `Remove all ${count} environment variable${count === 1 ? '' : 's'} for this project?\n\n` +
+        `This is useful when swapping Supabase projects, rotating auth, or\n` +
+        `copying a friend's keys by accident. The next deploy will build\n` +
+        `without any of these variables. This cannot be undone — but you\n` +
+        `can re-add them here at any time.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.clearAllEnv(projectId);
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div>
       <table className="env-table">
@@ -279,6 +303,17 @@ function EnvEditor({
       <div className="form" style={{ marginTop: 12, flexDirection: 'row', gap: 8 }}>
         <button onClick={add}><IconPlus size={12} /> Add variable</button>
         <button className="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        <span style={{ flex: 1 }} />
+        {rows_.some((r) => r.key) && (
+          <button
+            className="danger"
+            onClick={clearAll}
+            disabled={busy}
+            title="Remove all environment variables for this project"
+          >
+            <IconTrash size={12} /> Clear all
+          </button>
+        )}
       </div>
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
     </div>

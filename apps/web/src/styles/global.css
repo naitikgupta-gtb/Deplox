@@ -127,6 +127,31 @@ button.danger { color: var(--color-error); border-color: var(--color-error); bac
 button.link-button { border: none; background: transparent; padding: 0; text-decoration: underline; color: var(--color-fg-muted); }
 button.link-button:hover { color: var(--color-fg); }
 button.sm { padding: 5px 10px; font-size: 12px; }
+button.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+}
+button.icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+}
+button.icon-btn.danger:hover:not(:disabled) {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+button.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 input, select, textarea {
   font-family: inherit;
@@ -462,6 +487,7 @@ code {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
 }
 .project-card .top .name { font-weight: 600; font-size: 15px; }
+.project-card .top .top-right { display: flex; align-items: center; gap: 8px; }
 .project-card .repo {
   font-family: var(--font-mono); font-size: 12px;
   color: var(--color-fg-muted);

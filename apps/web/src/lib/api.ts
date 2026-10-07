@@ -121,6 +121,10 @@ export const api = {
     request<void>(`/api/projects/${projectId}/env/${encodeURIComponent(key)}`, {
       method: 'DELETE',
     }),
+  clearAllEnv: (projectId: string) =>
+    request<{ ok: true; deleted: 'all' }>(`/api/projects/${projectId}/env`, {
+      method: 'DELETE',
+    }),
 
   // Billing & founding-member endpoints (Phase 4 — backend stubs land in Phase 4d).
   getBilling: () => request<BillingInfo>('/api/billing'),

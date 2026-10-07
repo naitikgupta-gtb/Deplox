@@ -127,4 +127,18 @@ export function registerEnvRoutes(app: FastifyInstance): void {
       .where(and(eq(envVars.projectId, projectId), eq(envVars.key, key)));
     return reply.code(204).send();
   });
+
+  /**
+   * DELETE /api/projects/:projectId/env — bulk wipe every env var for a project.
+   * Used by the "Clear all" button on the env editor. Useful when copying a
+   * Supabase project, switching auth providers, or generally wanting a fresh
+   * slate without deleting the project itself.
+   */
+  app.delete('/api/projects/:projectId/env', async (req, reply) => {
+    const { projectId } = req.params as { projectId: string };
+    const project = await loadOwnedProject(projectId, req.user!.id);
+    if (!project) return reply.code(404).send({ error: 'not_found' });
+    await db.delete(envVars).where(eq(envVars.projectId, projectId));
+    return reply.send({ ok: true, deleted: 'all' });
+  });
 }

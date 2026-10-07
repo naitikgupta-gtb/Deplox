@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Deployment, Project, User } from '@deplox/shared-types';
 import { api } from '../lib/api';
 import {
@@ -9,15 +9,18 @@ import {
   IconArrowRight,
   IconPlus,
   IconRocket,
+  IconTrash,
 } from '../components/Icon';
 
 const FREE_PROJECT_LIMIT = 7;
 
 export function DashboardPage({ user }: { user: User }): JSX.Element {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [deployments, setDeployments] = useState<Record<string, Deployment[]>>({});
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = () => {
     api.listProjects().then(async (p) => {
       setProjects(p);
       const map: Record<string, Deployment[]> = {};
@@ -30,7 +33,34 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
       }
       setDeployments(map);
     }).catch(() => setProjects([]));
+  };
+
+  useEffect(() => {
+    refresh();
   }, []);
+
+  async function handleRemove(p: Project, ev: React.MouseEvent): Promise<void> {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const ok = window.confirm(
+      `Remove project "${p.name}"?\n\nThis will:\n` +
+        `  • Stop all running deployments\n` +
+        `  • Delete all environment variables\n` +
+        `  • Delete all deployment history\n` +
+        `  • Remove the Caddy custom-domain route\n\n` +
+        `This cannot be undone. The GitHub repo is untouched.`,
+    );
+    if (!ok) return;
+    setRemoving(p.id);
+    try {
+      await api.deleteProject(p.id);
+      refresh();
+    } catch (e) {
+      window.alert(`Failed to remove: ${(e as Error).message ?? e}`);
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   const total = projects?.length ?? 0;
   const running = Object.values(deployments).flat().filter((d) => d.status === 'running').length;
@@ -129,6 +159,7 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
         <div className="project-grid">
           {projects.map((p) => {
             const latest = deployments[p.id]?.[0];
+            const isRemoving = removing === p.id;
             return (
               <Link to={`/projects/${p.id}`} key={p.id} style={{ color: 'inherit' }}>
                 <div className="project-card">
@@ -137,11 +168,23 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
                       <div className="name">{p.name}</div>
                       <div className="repo">{p.githubRepoFullName}</div>
                     </div>
-                    {latest && (
-                      <span className={`status status-${latest.status}`}>
-                        <span className="dot" /> {latest.status}
-                      </span>
-                    )}
+                    <div className="top-right">
+                      {latest && (
+                        <span className={`status status-${latest.status}`}>
+                          <span className="dot" /> {latest.status}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        title="Remove project"
+                        aria-label={`Remove project ${p.name}`}
+                        disabled={isRemoving}
+                        onClick={(e) => handleRemove(p, e)}
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="meta">
