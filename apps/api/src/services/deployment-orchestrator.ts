@@ -211,7 +211,15 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     // (even before the user wires up a custom domain). The Cloudflare
     // tunnel already forwards all `*.deplox.site` to Caddy, so we just need
     // a Caddy route per running project. Failures are non-fatal.
-    const autoSubdomain = buildAutoSubdomain(project.id, project.name);
+    //
+    // Pick the short slug-acronym form first; if a DB collision (another
+    // project already owns that exact subdomain), fall back to the longer
+    // suffixed form so URLs stay short in the common case.
+    let autoSubdomain = buildAutoSubdomain(project.id, project.name);
+    const collision = await findSubdomainCollision(autoSubdomain, project.id);
+    if (collision) {
+      autoSubdomain = buildAutoSubdomainWithSuffix(project.id, project.name);
+    }
     const autoResult = await registerAutoSubdomainRoute(project.id, autoSubdomain, hostPort);
     if (!autoResult.ok) {
       appendLog(
@@ -419,15 +427,71 @@ function slugifyName(name: string): string {
  * deterministically derived from `(projectId, projectName)`, so re-running
  * a deploy produces the same subdomain (no churn, no broken links).
  *
- * Format: `<name-slug>-<8-char-id-suffix>.deplox.site`. The id suffix
- * guarantees uniqueness when two projects have the same name (e.g. two
- * "demo" projects).
+ * Format: `<slug>-<acronym>.deplox.site` — short and human-readable.
+ *
+ * Examples:
+ *   "event-checkin"                 → "event-checkin-ec.deplox.site"
+ *   "glbitm-attendance-system"      → "glbitm-attendance-system-gas.deplox.site"
+ *   "VelvetBrew-Coffee"             → "velvetbrew-coffee-vc.deplox.site"
+ *
+ * If the resulting subdomain already exists for another project (DB-level
+ * collision check done by the caller), a 4-char project-id suffix is
+ * appended to keep it short in the common case while staying unique.
  */
 export function buildAutoSubdomain(projectId: string, projectName: string): string {
   const slug = slugifyName(projectName);
-  // Strip the dashes so the suffix is a single 8-char block.
-  const suffix = projectId.replace(/-/g, '').slice(0, 8).toLowerCase();
-  return `${slug}-${suffix}.deplox.site`;
+  const acronym = buildAcronym(slug);
+  return `${slug}-${acronym}.deplox.site`;
+}
+
+/**
+ * Variant of buildAutoSubdomain that adds a 4-char project-id suffix to
+ * disambiguate from another project with the same slug+acronym. Used by
+ * the orchestrator when it detects a collision in the DB before writing
+ * the new publicUrl.
+ */
+export function buildAutoSubdomainWithSuffix(projectId: string, projectName: string): string {
+  const slug = slugifyName(projectName);
+  const acronym = buildAcronym(slug);
+  const suffix = projectId.replace(/-/g, '').slice(0, 4).toLowerCase();
+  return `${slug}-${acronym}-${suffix}.deplox.site`;
+}
+
+/**
+ * Returns true if `subdomain` (full `*.deplox.site` hostname) is already
+ * claimed by ANOTHER project in the DB. Used to decide whether the
+ * orchestrator should append a short id suffix to keep URLs unique.
+ */
+async function findSubdomainCollision(
+  subdomain: string,
+  excludeProjectId: string,
+): Promise<boolean> {
+  const { sql } = await import('drizzle-orm');
+  const rows = await db.execute(sql`
+    SELECT 1 FROM deployments
+    WHERE public_url = ${'https://' + subdomain}
+      AND project_id <> ${excludeProjectId}
+    LIMIT 1
+  `);
+  // db.execute returns { rows: [...] } in postgres-js
+  const arr = (rows as { rows?: unknown[] }).rows ?? (rows as unknown[]);
+  return Array.isArray(arr) && arr.length > 0;
+}
+
+/**
+ * First-letter acronym for a slug: each hyphen-separated word contributes
+ * its first character. Empty / single-char words are skipped.
+ *   "event-checkin"                 → "ec"
+ *   "glbitm-attendance-system"      → "gas"
+ *   "velvetbrew-coffee"             → "vc"
+ */
+function buildAcronym(slug: string): string {
+  const letters = slug
+    .split('-')
+    .filter((w) => w.length > 0)
+    .map((w) => w[0]);
+  // Always at least one character (slugifyName guarantees non-empty input).
+  return letters.length > 0 ? letters.join('') : 'app';
 }
 
 async function collectLogs(deploymentId: string): Promise<string> {

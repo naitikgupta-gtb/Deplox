@@ -267,7 +267,12 @@ export async function primeCaddyRoutes(): Promise<void> {
       }
     }
 
-    // 2) Auto-generated deplox.site subdomain (always).
+    // 2) Auto-generated deplox.site subdomain (always). Use the short
+    //    `<slug>-<acronym>` form so URLs are easy to share. We don't run
+    //    the DB collision check at startup (it's a hot path); if there
+    //    is a collision the user just gets two routes pointing at the
+    //    same Caddy listener — first match wins, last-deploy-wins-style.
+    //    The orchestrator's collision check kicks in on the next deploy.
     const subdomain = buildAutoSubdomain(row.projectId, row.projectName);
     const result = await registerAutoSubdomainRoute(row.projectId, subdomain, row.hostPort);
     if (!result.ok) {
@@ -275,15 +280,23 @@ export async function primeCaddyRoutes(): Promise<void> {
     }
 
     // 3) Backfill public_url: any running deployment still pointing at
-    //    http://localhost:<port> gets upgraded to the auto subdomain. The
+    //    http://localhost:<port> OR at the old long-form auto subdomain
+    //    (8-char id suffix) gets upgraded to the new short form. The
     //    custom-domain branch is left alone (its URL was correct already).
-    if (!row.customDomain && row.publicUrl && row.publicUrl.startsWith('http://localhost:')) {
-      const newUrl = `https://${subdomain}`;
+    const shortUrl = `https://${subdomain}`;
+    const isOldLongForm = row.publicUrl?.endsWith('.deplox.site')
+      && row.publicUrl !== shortUrl
+      && !row.customDomain;
+    if (
+      !row.customDomain
+      && row.publicUrl
+      && (row.publicUrl.startsWith('http://localhost:') || isOldLongForm)
+    ) {
       await db
         .update(deployments)
-        .set({ publicUrl: newUrl })
+        .set({ publicUrl: shortUrl })
         .where(eq(deployments.id, row.deploymentId));
-      log.info({ deploymentId: row.deploymentId, newUrl }, 'backfilled public_url with auto subdomain');
+      log.info({ deploymentId: row.deploymentId, newUrl: shortUrl }, 'backfilled public_url with auto subdomain');
     }
   }
 }
