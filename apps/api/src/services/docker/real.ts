@@ -17,7 +17,15 @@ import { defaultPortFor } from '../framework-detector.js';
 
 const execFile = promisify(execFileCb);
 
-const docker = new Dockerode();
+/**
+ * The shared Dockerode client. Exported so other services (e.g.
+ * `container-self-heal.ts`) can call low-level APIs like `getContainer` and
+ * `inspect` directly. The DockerProvider abstraction is for build/run/stop;
+ * self-heal needs `inspect` which isn't in the interface and isn't worth
+ * adding for one caller.
+ */
+export const docker = new Dockerode();
+
 const cfg = loadConfig();
 
 const BUILD_IMAGE = 'deplox/build-runner:latest'; // pre-baked in infra/docker/build.Dockerfile
@@ -321,7 +329,12 @@ export class RealDockerProvider implements DockerProvider {
         // Keep containers around (don't auto-remove) so failures are debuggable
         // and so the orchestrator's `stop` call can pick them up by name.
         AutoRemove: false,
-        RestartPolicy: { Name: 'no' },
+        // `always` so the container self-heals after a crash OR a `docker stop`.
+        // Critical for self-healing: a user's deplox app must come back on its
+        // own if Docker restarts, the host reboots, or the process dies. The
+        // orchestrator explicitly removes containers on project delete, so
+        // `always` won't leak stopped containers.
+        RestartPolicy: { Name: 'always' },
         ReadonlyRootfs: false,
       },
       name: `deplox-${opts.deploymentId}`,

@@ -28,6 +28,7 @@ import { registerBillingRoutes, registerAuthedBillingRoutes } from './routes/bil
 import { registerFoundingRoutes } from './routes/founding.js';
 import { primePortCache } from './services/port-allocator.js';
 import { primeCaddyRoutes } from './services/caddy.js';
+import { startContainerSelfHeal } from './services/container-self-heal.js';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -119,6 +120,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   // reverse-proxy mapping after an API restart — without it, custom domains
   // would 502 until the next deploy.
   try { await primeCaddyRoutes(); } catch (err) { app.log.warn({ err }, 'caddy route priming failed'); }
+
+  // Application-level self-heal: Docker Desktop on this host ignores the
+  // `restart=always` policy for Dockerode-created containers after a manual
+  // `docker stop`, so we run our own periodic scan that `docker start`s any
+  // deployment row whose container has died. The first scan happens in the
+  // background so cold-start latency is unchanged.
+  try { startContainerSelfHeal(); } catch (err) { app.log.warn({ err }, 'container self-heal init failed'); }
 
   return app;
 }

@@ -45,14 +45,38 @@ services:
 
   caddy:
     image: caddy:2.8-alpine
-    restart: unless-stopped
+    restart: always
     ports:
       - "8000:8000"   # public reverse proxy (DEPLOX_CADDY_PORT)
       - "2019:2019"   # admin API
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
+      # Bind-mount /config too so /config/caddy/autosave.json (which holds
+      # runtime-added routes from the admin API) survives container restarts.
+      # Without this, autosave lives in the ephemeral writable layer and the
+      # `--resume` flag has nothing to load on restart.
+      - ./data/caddy-config:/config
       - ./caddy/local-authorities:/etc/caddy/local-authorities:ro
+    command:
+      # `--resume` makes Caddy auto-load /config/caddy/autosave.json on
+      # container startup, restoring runtime-added per-hostname routes after
+      # a Caddy restart. Combined with CADDY_CONFIG_SAVE_INTERVAL below, this
+      # gives us real persistence for routes registered via the admin API.
+      # Without --resume, the autosave file exists but is ignored on boot.
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+      - --resume
     environment:
       # Caddy needs to trust the local CA we generated for development TLS.
       - CADDY_TRUSTED_ROOT_CA_FILE=/etc/caddy/local-authorities/root.crt
+      # Autosave the running config (including runtime-added routes) to
+      # /data/caddy/autosave.json every 10s AND on graceful shutdown.
+      # With --resume above, Caddy reloads this file on container restart,
+      # so per-hostname routes survive a `docker restart infra-caddy-1`
+      # without the API having to re-prime them.
+      - CADDY_CONFIG_SAVE_INTERVAL=10s

@@ -193,20 +193,19 @@ async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
     path: '/config/apps/http/servers/srv0/routes/',
     body: catchAll,
   });
-  if (!reAdd.ok) return true;
-
-  // 5) Persist the running config so routes survive a Caddy restart.
-  //    Without this, runtime-added routes are lost on every Caddy
-  //    container restart and the API has to re-prime them (which only
-  //    works if the API itself is up — a chicken-and-egg problem on a
-  //    cold boot). Caddy's POST /load/ with preserve=1 keeps the
-  //    current in-memory config but writes autosave.json; on container
-  //    restart Caddy auto-loads that file, so routes persist.
-  await adminRequest({
-    method: 'POST',
-    path: '/load/?preserve=1',
-  }).catch(() => undefined);
-
+  // NOTE on persistence: runtime routes survive a Caddy container restart
+  // because of two infra-level settings, not because we manually save here:
+  //   1. infra/caddy/Caddyfile + `caddy run --resume` in docker-compose.yml
+  //      makes Caddy reload /config/caddy/autosave.json on startup.
+  //   2. CADDY_CONFIG_SAVE_INTERVAL=10s (set on the caddy service in
+  //      docker-compose.yml) makes Caddy write the running config — including
+  //      runtime-added routes — to autosave.json every 10s and on graceful
+  //      shutdown.
+  // We previously tried `POST /load/?preserve=1` here, but it doesn't
+  // actually persist runtime-added routes and instead mutates the in-memory
+  // admin binding (it reloads config from disk into the running process,
+  // which on Caddy 2.8 changes admin from `0.0.0.0:2019` to `localhost:2019`
+  // and breaks API → Caddy connectivity). Autosave handles it correctly.
   return reAdd.ok;
 }
 
