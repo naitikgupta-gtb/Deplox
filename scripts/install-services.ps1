@@ -3,7 +3,8 @@ Get-Process node -ErrorAction SilentlyContinue | Where-Object {
   $_.Path -and ($_.Path -like '*\node.exe' -or $_.Path -like '*\pnpm*')
 } | Stop-Process -Force -ErrorAction SilentlyContinue
 
-$ErrorActionPreference = 'Stop'
+# Allow NSSM to print "Can't open service" for non-existent services without aborting.
+$ErrorActionPreference = 'Continue'
 
 $Nssm = 'C:\Users\naiti\AppData\Local\Microsoft\WinGet\Packages\NSSM.NSSM_Microsoft.Winget.Source_8wekyb3d8bbwe\nssm-2.24-101-g897c7ad\win64\nssm.exe'
 $Deplox = 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox'
@@ -12,19 +13,30 @@ New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
 function Install-Service {
   param([string]$Name, [string]$Display, [string]$Exe, [string]$Args, [string]$StdOut, [string]$StdErr)
-  # Remove existing if any
-  & $Nssm stop $Name 2>$null
-  & $Nssm remove $Name confirm 2>$null
-  & $Nssm install $Name $Exe $Args | Out-Null
-  & $Nssm set $Name DisplayName $Display | Out-Null
-  & $Nssm set $Name Start SERVICE_AUTO_START | Out-Null
-  & $Nssm set $Name AppStdout $StdOut | Out-Null
-  & $Nssm set $Name AppStderr $StdErr | Out-Null
-  & $Nssm set $Name AppRotateFiles 1 | Out-Null
-  & $Nssm set $Name AppRotateBytes 10485760 | Out-Null
-  & $Nssm set $Name AppRestartDelay 5000 | Out-Null
-  # Throttle restart: if it dies within 60s, wait 60s before trying again
-  & $Nssm set $Name AppThrottle 60000 | Out-Null
+
+  # Remove any pre-existing service (silent on "doesn't exist").
+  $existing = & $Nssm status $Name 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    & $Nssm stop $Name 2>&1 | Out-Null
+    & $Nssm remove $Name confirm 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 500
+  }
+
+  # Install fresh
+  & $Nssm install $Name $Exe $Args 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "  FAILED to install $Name (nssm exit $LASTEXITCODE)"
+    return
+  }
+
+  & $Nssm set $Name DisplayName $Display 2>&1 | Out-Null
+  & $Nssm set $Name Start SERVICE_AUTO_START 2>&1 | Out-Null
+  & $Nssm set $Name AppStdout $StdOut 2>&1 | Out-Null
+  & $Nssm set $Name AppStderr $StdErr 2>&1 | Out-Null
+  & $Nssm set $Name AppRotateFiles 1 2>&1 | Out-Null
+  & $Nssm set $Name AppRotateBytes 10485760 2>&1 | Out-Null
+  & $Nssm set $Name AppRestartDelay 5000 2>&1 | Out-Null
+  & $Nssm set $Name AppThrottle 60000 2>&1 | Out-Null
   Write-Host "  installed: $Name -> $Exe $Args"
 }
 
@@ -32,8 +44,8 @@ function Install-Service {
 Install-Service `
   -Name 'deplox-api' `
   -Display 'Deplox API (port 8080)' `
-  -Exe 'C:\Program Files\nodejs\node.exe' `
-  -Args 'C:\Program Files\nodejs\node_modules\pnpm\bin\pnpm.cjs dev:api' `
+  -Exe 'C:\nvm4w\nodejs\node.exe' `
+  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:api' `
   -StdOut "$LogsDir\api.out.log" `
   -StdErr "$LogsDir\api.err.log"
 
@@ -41,8 +53,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-web' `
   -Display 'Deplox Web (Vite, port 5173)' `
-  -Exe 'C:\Program Files\nodejs\node.exe' `
-  -Args 'C:\Program Files\nodejs\node_modules\pnpm\bin\pnpm.cjs dev:web' `
+  -Exe 'C:\nvm4w\nodejs\node.exe' `
+  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:web' `
   -StdOut "$LogsDir\web.out.log" `
   -StdErr "$LogsDir\web.err.log"
 
@@ -50,8 +62,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-worker' `
   -Display 'Deplox Worker (BullMQ)' `
-  -Exe 'C:\Program Files\nodejs\node.exe' `
-  -Args 'C:\Program Files\nodejs\node_modules\pnpm\bin\pnpm.cjs dev:worker' `
+  -Exe 'C:\nvm4w\nodejs\node.exe' `
+  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:worker' `
   -StdOut "$LogsDir\worker.out.log" `
   -StdErr "$LogsDir\worker.err.log"
 
@@ -66,12 +78,12 @@ Install-Service `
 
 # Set working directory for the pnpm services so .env loading works
 foreach ($svc in @('deplox-api','deplox-web','deplox-worker')) {
-  & $Nssm set $svc AppDirectory 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox' | Out-Null
+  & $Nssm set $svc AppDirectory 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox' 2>&1 | Out-Null
 }
 
 # Start them all
 foreach ($svc in @('deplox-api','deplox-web','deplox-worker','deplox-tunnel')) {
-  & $Nssm start $svc | Out-Null
+  & $Nssm start $svc 2>&1 | Out-Null
   Write-Host "  started: $svc"
 }
 
@@ -90,7 +102,7 @@ docker update --restart=always infra-caddy-1 2>&1 | Out-Null
 
 Write-Host ""
 Write-Host "=== services installed. Status: ==="
-sc.exe query deplox-api | Select-Object -ExpandProperty Status
-sc.exe query deplox-web | Select-Object -ExpandProperty Status
-sc.exe query deplox-worker | Select-Object -ExpandProperty Status
-sc.exe query deplox-tunnel | Select-Object -ExpandProperty Status
+foreach ($svc in @('deplox-api','deplox-web','deplox-worker','deplox-tunnel')) {
+  $state = (sc.exe query $svc 2>&1 | Select-String 'STATE' | ForEach-Object { $_.ToString().Trim() })
+  Write-Host "  $svc : $state"
+}
