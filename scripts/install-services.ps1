@@ -44,8 +44,8 @@ function Install-Service {
 Install-Service `
   -Name 'deplox-api' `
   -Display 'Deplox API (port 8080)' `
-  -Exe 'C:\nvm4w\nodejs\node.exe' `
-  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:api' `
+  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:api"' `
   -StdOut "$LogsDir\api.out.log" `
   -StdErr "$LogsDir\api.err.log"
 
@@ -53,8 +53,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-web' `
   -Display 'Deplox Web (Vite, port 5173)' `
-  -Exe 'C:\nvm4w\nodejs\node.exe' `
-  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:web' `
+  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:web"' `
   -StdOut "$LogsDir\web.out.log" `
   -StdErr "$LogsDir\web.err.log"
 
@@ -62,8 +62,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-worker' `
   -Display 'Deplox Worker (BullMQ)' `
-  -Exe 'C:\nvm4w\nodejs\node.exe' `
-  -Args 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1 dev:worker' `
+  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:worker"' `
   -StdOut "$LogsDir\worker.out.log" `
   -StdErr "$LogsDir\worker.err.log"
 
@@ -76,9 +76,12 @@ Install-Service `
   -StdOut "$LogsDir\tunnel.out.log" `
   -StdErr "$LogsDir\tunnel.err.log"
 
-# Set working directory for the pnpm services so .env loading works
+# Set working directory for the pnpm services so .env loading works,
+# and set PATH so the service can find node + pnpm (services run with a
+# minimal environment that doesn't include the user PATH).
 foreach ($svc in @('deplox-api','deplox-web','deplox-worker')) {
   & $Nssm set $svc AppDirectory 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox' 2>&1 | Out-Null
+  & $Nssm set $svc AppEnvironmentExtra 'PATH=C:\nvm4w\nodejs;C:\Users\naiti\AppData\Roaming\npm;%PATH%' 2>&1 | Out-Null
 }
 
 # Start them all
