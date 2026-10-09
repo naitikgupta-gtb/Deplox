@@ -193,6 +193,20 @@ async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
     path: '/config/apps/http/servers/srv0/routes/',
     body: catchAll,
   });
+  if (!reAdd.ok) return true;
+
+  // 5) Persist the running config so routes survive a Caddy restart.
+  //    Without this, runtime-added routes are lost on every Caddy
+  //    container restart and the API has to re-prime them (which only
+  //    works if the API itself is up — a chicken-and-egg problem on a
+  //    cold boot). Caddy's POST /load/ with preserve=1 keeps the
+  //    current in-memory config but writes autosave.json; on container
+  //    restart Caddy auto-loads that file, so routes persist.
+  await adminRequest({
+    method: 'POST',
+    path: '/load/?preserve=1',
+  }).catch(() => undefined);
+
   return reAdd.ok;
 }
 
