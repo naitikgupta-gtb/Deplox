@@ -44,8 +44,8 @@ function Install-Service {
 Install-Service `
   -Name 'deplox-api' `
   -Display 'Deplox API (port 8080)' `
-  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:api"' `
+  -Exe 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
+  -Args 'dev:api' `
   -StdOut "$LogsDir\api.out.log" `
   -StdErr "$LogsDir\api.err.log"
 
@@ -53,8 +53,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-web' `
   -Display 'Deplox Web (Vite, port 5173)' `
-  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:web"' `
+  -Exe 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
+  -Args 'dev:web' `
   -StdOut "$LogsDir\web.out.log" `
   -StdErr "$LogsDir\web.err.log"
 
@@ -62,8 +62,8 @@ Install-Service `
 Install-Service `
   -Name 'deplox-worker' `
   -Display 'Deplox Worker (BullMQ)' `
-  -Exe 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-  -Args '-NoProfile -ExecutionPolicy Bypass -Command "pnpm dev:worker"' `
+  -Exe 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
+  -Args 'dev:worker' `
   -StdOut "$LogsDir\worker.out.log" `
   -StdErr "$LogsDir\worker.err.log"
 
