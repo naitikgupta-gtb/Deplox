@@ -27,10 +27,15 @@
 	auto_https off
 }
 
-# Default site — fall through to the DEPLOX dashboard.
+# DEPLOX dashboard catch-all — falls through to the dev dashboard.
 # Note: from inside the Caddy container, the DEPLOX host's services are
 # reachable via Docker Desktop's host.docker.internal alias (not localhost,
 # which would resolve to the container's own loopback).
+#
+# This route has NO host matcher so it greedily matches every request on
+# :8000. Per-hostname routes (event-checkin-ec.deplox.site → localhost:9002
+# etc.) MUST be inserted BEFORE this catch-all in the routes array, not
+# appended after — see registerAutoSubdomainRoute() in apps/api/src/services/caddy.ts.
 :8000 {
 	reverse_proxy host.docker.internal:5173
 }

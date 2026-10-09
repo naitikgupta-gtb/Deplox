@@ -124,6 +124,78 @@ async function findRouteIndex(id: string): Promise<number | null> {
   return idx >= 0 ? idx : null;
 }
 
+/**
+ * Insert a route at the front of the routes array. Critical: Caddy evaluates
+ * routes in array order and does NOT auto-reorder by specificity. The
+ * catch-all (no matcher, defined in the Caddyfile) is at index 0, so any
+ * route we POST-appends ends up AFTER it and never gets matched.
+ *
+ * Two Caddy API quirks shape the implementation:
+ *   - PUT /routes/ (with trailing slash) returns 409 "key already exists"
+ *     because Caddy treats it as "create new key under routes" rather than
+ *     "replace the whole array".
+ *   - PUT /routes (no trailing slash) also 409s in newer Caddy versions.
+ *   The reliable workaround: POST the new route (appends at end), DELETE
+ *   index 0 (which is the bare catch-all route), then POST the catch-all
+ *   back so it lands at the end. Per-hostname routes end up at the front.
+ *
+ * Identifies the catch-all as "the route at index 0 with no @id" — robust
+ * because nothing else in our flow produces a route without an @id.
+ */
+async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
+  // 1) Drop any existing route with the same @id so the new port / host wins.
+  const existingIdx = await findRouteIndex(route['@id']);
+  if (existingIdx !== null) {
+    const del = await adminRequest({
+      method: 'DELETE',
+      path: `/config/apps/http/servers/srv0/routes/${existingIdx}`,
+    });
+    if (!del.ok) return false;
+  }
+
+  // 2) Append the new route (POST /routes/ is the documented append path).
+  const post = await adminRequest({
+    method: 'POST',
+    path: '/config/apps/http/servers/srv0/routes/',
+    body: route,
+  });
+  if (!post.ok) return false;
+
+  // 3) Find and DELETE the bare catch-all (no @id, no match). It must be at
+  //    index 0 because every other route we add has an @id and we just
+  //    appended ours.
+  const after = await adminRequest({
+    method: 'GET',
+    path: '/config/apps/http/servers/srv0/routes/',
+  });
+  if (!after.ok) return true; // route is registered, we just can't reorder
+  let current: Array<Record<string, unknown>>;
+  try {
+    current = JSON.parse(after.message) as Array<Record<string, unknown>>;
+  } catch {
+    return true;
+  }
+  // Catch-all is "no @id" — our own route already has @id so it survives the filter.
+  const catchAllIdx = current.findIndex((r) => !r['@id']);
+  if (catchAllIdx < 0) return true; // already at the end? nothing to do
+
+  const delCatchAll = await adminRequest({
+    method: 'DELETE',
+    path: `/config/apps/http/servers/srv0/routes/${catchAllIdx}`,
+  });
+  if (!delCatchAll.ok) return true;
+
+  // 4) Re-add the catch-all so it lands at the END of the routes array.
+  //    Capture the catch-all body BEFORE we deleted it.
+  const catchAll = current[catchAllIdx];
+  const reAdd = await adminRequest({
+    method: 'POST',
+    path: '/config/apps/http/servers/srv0/routes/',
+    body: catchAll,
+  });
+  return reAdd.ok;
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -131,10 +203,14 @@ async function findRouteIndex(id: string): Promise<number | null> {
 /**
  * Registers a route for a custom domain pointing at a host port.
  *
- * Implementation note: Caddy's `POST /id/<id>` only works for objects that
- * already exist; for new routes we POST the route to the routes collection
- * at `/config/apps/http/servers/srv0/routes/`. Caddy auto-orders routes so
- * static host matchers win over the catch-all.
+ * Implementation: inserts the route at index 0 of the routes array so it
+ * wins over the bare `:8000` catch-all that the Caddyfile defines. See
+ * insertRouteAtFront for why we can't just POST (Caddy evaluates routes
+ * in array order without auto-reordering).
+ *
+ * Dial uses `host.docker.internal:<port>` because Caddy runs inside a
+ * container; `localhost:<port>` would point at the Caddy container's own
+ * loopback, not the host's port where the deplox container is bound.
  */
 export async function registerDomainRoute(
   projectId: string,
@@ -147,16 +223,15 @@ export async function registerDomainRoute(
     handle: [
       {
         handler: 'reverse_proxy',
-        upstreams: [{ dial: `localhost:${hostPort}` }],
+        upstreams: [{ dial: `host.docker.internal:${hostPort}` }],
       },
     ],
     terminal: true,
   };
-  return adminRequest({
-    method: 'POST',
-    path: '/config/apps/http/servers/srv0/routes/',
-    body: route,
-  });
+  const ok = await insertRouteAtFront(route);
+  return ok
+    ? { ok: true, status: 200, message: 'route registered at front of routes array' }
+    : { ok: false, status: 0, message: 'failed to insert route at front of routes array' };
 }
 
 /** Removes the route for a project's custom domain (no-op if it doesn't exist). */
@@ -177,6 +252,11 @@ export async function unregisterDomainRoute(projectId: string): Promise<AdminRes
  * Cloudflare Tunnel's wildcard ingress (see ~/.cloudflared/config.yml) means
  * ANY `<anything>.deplox.site` request is already forwarded to Caddy :8000.
  * All we need to do is add the per-hostname reverse-proxy route here.
+ *
+ * Inserted at the front of the array to win over the `:8000` catch-all.
+ *
+ * Dial uses `host.docker.internal:<port>` because Caddy runs inside a
+ * container; `localhost` would resolve to the Caddy container itself.
  */
 export async function registerAutoSubdomainRoute(
   projectId: string,
@@ -189,16 +269,15 @@ export async function registerAutoSubdomainRoute(
     handle: [
       {
         handler: 'reverse_proxy',
-        upstreams: [{ dial: `localhost:${hostPort}` }],
+        upstreams: [{ dial: `host.docker.internal:${hostPort}` }],
       },
     ],
     terminal: true,
   };
-  return adminRequest({
-    method: 'POST',
-    path: '/config/apps/http/servers/srv0/routes/',
-    body: route,
-  });
+  const ok = await insertRouteAtFront(route);
+  return ok
+    ? { ok: true, status: 200, message: 'auto-subdomain route registered at front of routes array' }
+    : { ok: false, status: 0, message: 'failed to insert auto-subdomain route at front of routes array' };
 }
 
 /** Removes the auto-subdomain route for a project. */
