@@ -2,15 +2,6 @@ import { useEffect, useState } from 'react';
 import { IconCheck, IconClock, IconWarning, IconServer } from '../components/Icon';
 import { useMeta } from '../lib/use-meta';
 
-export function StatusPage(): JSX.Element {
-  useMeta({
-    title: 'System status — DEPLOX',
-    description:
-      'Live operational status of DEPLOX services: API, web dashboard, build runner, tunnel, and deplox-deployed apps. 90-day uptime and recent incidents.',
-    path: '/status',
-  });
-  return (
-
 interface ServiceStatus {
   readonly id: string;
   readonly name: string;
@@ -82,6 +73,12 @@ const RECENT_INCIDENTS: ReadonlyArray<Incident> = [
 ];
 
 export function StatusPage(): JSX.Element {
+  useMeta({
+    title: 'System status — DEPLOX',
+    description:
+      'Live operational status of DEPLOX services: API, web dashboard, build runner, tunnel, and deplox-deployed apps. 90-day uptime and recent incidents.',
+    path: '/status',
+  });
   const [overall, setOverall] = useState<'operational' | 'degraded' | 'outage'>('operational');
   const [updatedAt, setUpdatedAt] = useState(new Date());
 
