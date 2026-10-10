@@ -73,6 +73,17 @@ export interface FoundingSlotsRemaining {
   readonly total: number;
 }
 
+export interface UserRepo {
+  readonly fullName: string;
+  readonly defaultBranch: string;
+  readonly isPrivate: boolean;
+  readonly description: string | null;
+  readonly stars: number;
+  readonly language: string | null;
+  readonly pushedAt: string;
+  readonly htmlUrl: string;
+}
+
 export interface FoundingMemberResponse {
   readonly ok: boolean;
   readonly slotNumber: number;
@@ -143,6 +154,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  // GitHub repo picker — needs an OAuth token; returns [] if user has none.
+  listUserRepos: () =>
+    request<{ repos: UserRepo[] }>('/api/github/repos').then((r) => r.repos).catch(() => [] as UserRepo[]),
 };
 
 export async function fetchMe(): Promise<User | null> {

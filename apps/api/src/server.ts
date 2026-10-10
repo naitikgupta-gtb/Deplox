@@ -26,6 +26,7 @@ import { registerEnvRoutes } from './routes/env.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { registerBillingRoutes, registerAuthedBillingRoutes } from './routes/billing.js';
 import { registerFoundingRoutes } from './routes/founding.js';
+import { registerGithubReposRoute } from './routes/github-repos.js';
 import { primePortCache } from './services/port-allocator.js';
 import { primeCaddyRoutes } from './services/caddy.js';
 import { startContainerSelfHeal } from './services/container-self-heal.js';
@@ -102,6 +103,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     registerDeploymentRoutes(subApp);
     registerEnvRoutes(subApp);
     registerAuthedBillingRoutes(subApp);
+    registerGithubReposRoute(subApp);
   });
 
   app.setErrorHandler((err, req, reply) => {

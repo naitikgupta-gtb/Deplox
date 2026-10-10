@@ -214,3 +214,60 @@ export async function disposeClone(workdir: string): Promise<void> {
 
 // keep `readFile` exported for callers that want to inspect a file
 export { readFile };
+
+// =============================================================================
+// List user repos (for the New Project picker UI)
+// =============================================================================
+
+export interface UserRepoSummary {
+  /** "owner/name" — what we store on Project.githubRepoFullName. */
+  readonly fullName: string;
+  readonly defaultBranch: string;
+  readonly isPrivate: boolean;
+  readonly description: string | null;
+  readonly stars: number;
+  readonly language: string | null;
+  /** ISO timestamp — used to sort "most recently pushed first". */
+  readonly pushedAt: string;
+  readonly htmlUrl: string;
+}
+
+/**
+ * Lists the repos the authenticated user has access to on GitHub — used by
+ * the New Project page so users can pick from a list instead of typing
+ * `owner/repo` blind.
+ *
+ * Without a token we can't list anything (the GitHub `/user/repos` endpoint
+ * requires authentication), so this returns `[]` and the front-end falls
+ * back to a manual `owner/repo` input. With a token we hit the authenticated
+ * endpoint and return up to 100 repos sorted by `pushed_at` desc.
+ *
+ * The `affiliation` param includes `owner` (repos the user owns),
+ * `collaborator`, and `organization_member` so the picker also surfaces
+ * org repos the user has access to.
+ */
+export async function listUserRepos(accessToken: string | null): Promise<UserRepoSummary[]> {
+  if (!accessToken) return [];
+  const octokit = new Octokit({ auth: accessToken });
+  const repos: UserRepoSummary[] = [];
+  for await (const { data } of octokit.paginate.iterator(octokit.rest.repos.listForAuthenticatedUser, {
+    affiliation: 'owner,collaborator,organization_member',
+    per_page: 100,
+    sort: 'pushed',
+    direction: 'desc',
+  })) {
+    for (const r of data) {
+      repos.push({
+        fullName: r.full_name,
+        defaultBranch: r.default_branch,
+        isPrivate: r.private,
+        description: r.description,
+        stars: r.stargazers_count ?? 0,
+        language: r.language,
+        pushedAt: r.pushed_at ?? new Date(0).toISOString(),
+        htmlUrl: r.html_url,
+      });
+    }
+  }
+  return repos;
+}
