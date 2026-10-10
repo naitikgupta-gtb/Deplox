@@ -2,6 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { IconBolt, IconCheck, IconGithub } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
+
+export function FoundingMemberPage(): JSX.Element {
+  useMeta({
+    title: 'Founding Member — 6 months of DEPLOX Pro free',
+    description:
+      'The first 50 DEPLOX users get Pro free for 6 months: unlimited projects, custom domains, priority support, and a direct line to the founder.',
+    path: '/founding',
+  });
+  return (
 
 interface FoundingMemberInput {
   readonly email: string;

@@ -1,5 +1,15 @@
 import { Link } from 'react-router-dom';
 import { IconArrowUpRight, IconCheck, IconGithub, IconWarning } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
+
+export function ChangelogPage(): JSX.Element {
+  useMeta({
+    title: 'Changelog — DEPLOX',
+    description:
+      'Every release, fix, and breaking change in DEPLOX. Versioned history with date, tag, highlights, and migration notes.',
+    path: '/changelog',
+  });
+  return (
 
 interface ReleaseEntry {
   readonly version: string;

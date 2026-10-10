@@ -7,6 +7,16 @@ import {
   IconGlobe,
   IconRocket,
 } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
+
+export function PricingPage(): JSX.Element {
+  useMeta({
+    title: 'Pricing — Free and Pro tiers',
+    description:
+      'DEPLOX free tier: 7 projects, 50 GB egress, free deplox.site subdomain. Pro: unlimited projects, custom domains, priority support.',
+    path: '/pricing',
+  });
+  return (
 
 interface Tier {
   readonly id: 'free' | 'pro' | 'team';

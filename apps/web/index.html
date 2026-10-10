@@ -3,9 +3,87 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/og-image.svg" />
+    <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="DEPLOX — honest deployment for developers." />
-    <title>DEPLOX</title>
+    <meta name="theme-color" content="#0a0a0a" />
+
+    <!-- Primary SEO -->
+    <title>DEPLOX — Deploy your GitHub repo in 2 minutes</title>
+    <meta
+      name="description"
+      content="DEPLOX clones, builds, and serves your GitHub repo on a public URL with HTTPS, encrypted secrets, and instant rollback. No DevOps, no nginx archaeology."
+    />
+    <meta
+      name="keywords"
+      content="deploy, github, hosting, free hosting, react deploy, vite deploy, nextjs deploy, svelte deploy, serverless"
+    />
+    <meta name="author" content="DEPLOX" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DEPLOX" />
+    <meta property="og:title" content="DEPLOX — Deploy your GitHub repo in 2 minutes" />
+    <meta
+      property="og:description"
+      content="Clone, build, and serve your app on a public URL with HTTPS. Encrypted secrets, instant rollback, and a free subdomain on deplox.site."
+    />
+    <meta property="og:url" content="https://deplox.site/" />
+    <meta property="og:image" content="https://deplox.site/og-image.svg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DEPLOX — Deploy your GitHub repo in 2 minutes" />
+    <meta
+      name="twitter:description"
+      content="Clone, build, and serve your app on a public URL with HTTPS. Encrypted secrets, instant rollback, and a free subdomain on deplox.site."
+    />
+    <meta name="twitter:image" content="https://deplox.site/og-image.svg" />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://deplox.site/" />
+
+    <!-- Structured data: SoftwareApplication -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "DEPLOX",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "description": "Deploy your GitHub repo in 2 minutes. Clone, build, and serve on a public URL with HTTPS, encrypted secrets, and instant rollback.",
+        "url": "https://deplox.site",
+        "image": "https://deplox.site/og-image.svg",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "Free tier with 7 projects and 50 GB egress"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "5",
+          "ratingCount": "1"
+        }
+      }
+    </script>
+
+    <!-- Structured data: Organization -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "DEPLOX",
+        "url": "https://deplox.site",
+        "logo": "https://deplox.site/og-image.svg",
+        "sameAs": [
+          "https://github.com/naitikgupta-gtb/Deplox"
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IconArrowRight, IconBook, IconCheck, IconGithub } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
+
+export function DocsPage(): JSX.Element {
+  useMeta({
+    title: 'Docs — Get started with DEPLOX',
+    description:
+      'How to deploy your first GitHub repo on DEPLOX. Step-by-step guide covering GitHub login, framework detection, env vars, custom domains, and the deploy API.',
+    path: '/docs',
+  });
+  return (
 
 interface DocSection {
   readonly id: string;

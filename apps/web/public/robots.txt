@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /new
+Disallow: /projects/
+Disallow: /billing
+Disallow: /api/
+
+Sitemap: https://deplox.site/sitemap.xml

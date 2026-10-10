@@ -1,7 +1,14 @@
 import { Link } from 'react-router-dom';
 import { IconArrowRight, IconGithub, IconRocket, IconShield, IconBolt } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
 
 export function AboutPage(): JSX.Element {
+  useMeta({
+    title: 'About — DEPLOX',
+    description:
+      'DEPLOX is built by one developer in India. Honest deployment, no VC pressure, transparent pricing. Here is the story and the values.',
+    path: '/about',
+  });
   return (
     <div className="about">
       <header className="about-hero">

@@ -10,8 +10,15 @@ import {
   IconRocket,
   IconZap,
 } from '../components/Icon';
+import { useMeta } from '../lib/use-meta';
 
 export function LandingPage(): JSX.Element {
+  useMeta({
+    title: 'Deploy your GitHub repo in 2 minutes',
+    description:
+      'DEPLOX clones, builds, and serves your GitHub repo on a public URL with HTTPS, encrypted secrets, and instant rollback. No DevOps, no nginx archaeology.',
+    path: '/',
+  });
   return (
     <div className="landing">
       <div className="founding-strip">
