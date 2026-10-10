@@ -25,6 +25,39 @@ import { docker } from './docker/real.js';
 const log = childLogger({ component: 'container-self-heal' });
 
 const PERIODIC_INTERVAL_MS = 30_000;
+const HEALTH_PROBE_TIMEOUT_MS = 2000;
+
+/**
+ * TCP-level reachability probe for a deplox-deployed container.
+ *
+ * We don't speak HTTP — we just check that the host port answers a TCP
+ * SYN within the timeout. This is good enough to distinguish "app
+ * crashed, port closed" from "app running, port open". A `docker restart`
+ * on a truly-up-but-broken container is cheap and self-correcting, so
+ * we trade a few false-positive restarts (during slow app boot) for
+ * catching the real "app is wedged" case within 30s instead of forever.
+ *
+ * Uses `host.docker.internal` because the API runs inside a container
+ * and the deplox app's exposed port is published to the host network.
+ */
+async function probeHostPort(hostPort: number, timeoutMs: number): Promise<boolean> {
+  const net = await import('node:net');
+  return new Promise<boolean>((resolve) => {
+    const sock = new net.Socket();
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      resolve(ok);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => finish(true));
+    sock.once('timeout', () => finish(false));
+    sock.once('error', () => finish(false));
+    sock.connect(hostPort, 'host.docker.internal');
+  });
+}
 
 export interface SelfHealResult {
   scanned: number;
@@ -61,7 +94,31 @@ export async function selfHealContainers(): Promise<SelfHealResult> {
     try {
       const container = docker.getContainer(row.containerId);
       const info = await container.inspect();
-      if (info.State?.Running) continue;
+      if (info.State?.Running) {
+        // Container is up — but is the app inside actually serving? The
+        // container can be "Up" while the app process has crashed
+        // (OOM, unhandled exception, deadlock). Caddy would return 502
+        // for those because upstream is unreachable. Probe the app's
+        // host port and `docker restart` (hard restart) if it doesn't
+        // respond. Uses host.docker.internal because we're inside Docker
+        // and the container's exposed port is published to the host.
+        if (row.hostPort) {
+          const healthy = await probeHostPort(row.hostPort, 2000);
+          if (!healthy) {
+            log.warn(
+              { deploymentId: row.id, containerId: row.containerId, hostPort: row.hostPort },
+              'deplox container up but app not responding — restarting',
+            );
+            await container.restart({ t: 5 });
+            restarted += 1;
+            log.info(
+              { deploymentId: row.id, containerId: row.containerId, hostPort: row.hostPort },
+              'restarted unresponsive deplox container',
+            );
+          }
+        }
+        continue;
+      }
       // Container exists but isn't running — start it.
       await container.start();
       restarted += 1;
