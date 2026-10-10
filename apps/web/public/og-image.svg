@@ -5,14 +5,35 @@
       <stop offset="100%" stop-color="#171717"/>
     </linearGradient>
   </defs>
+
+  <!-- background -->
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <g transform="translate(80, 200)">
-    <text font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600" fill="#a3a3a3" letter-spacing="6">DEPLOX</text>
-    <text y="120" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700" fill="#fafafa">Deploy your GitHub repo.</text>
-    <text y="220" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700" fill="#737373">In 2 minutes.</text>
-    <text y="320" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="400" fill="#a3a3a3">HTTPS · Encrypted secrets · Instant rollback · Free subdomain</text>
+
+  <!-- brand mark — three stacked squares, top-right -->
+  <g transform="translate(80, 80)">
+    <rect x="8" y="40" width="36" height="16" rx="4" fill="#fafafa" opacity="0.35"/>
+    <rect x="14" y="24" width="36" height="16" rx="4" fill="#fafafa" opacity="0.65"/>
+    <rect x="20" y="8" width="36" height="16" rx="4" fill="#fafafa" opacity="1"/>
+    <text x="74" y="32"
+          font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600"
+          fill="#fafafa" letter-spacing="-0.04em">deplox</text>
   </g>
-  <g transform="translate(1100, 580)" font-family="Inter, system-ui, sans-serif" font-size="20" fill="#525252" text-anchor="end">
+
+  <!-- hero copy -->
+  <g transform="translate(80, 240)">
+    <text font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600"
+          fill="#a3a3a3" letter-spacing="6">DEPLOY · BUILD · SCALE</text>
+    <text y="120" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700"
+          fill="#fafafa">Deploy your GitHub repo.</text>
+    <text y="220" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700"
+          fill="#737373">In 2 minutes.</text>
+    <text y="320" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="400"
+          fill="#a3a3a3">HTTPS · Encrypted secrets · Instant rollback · Free subdomain</text>
+  </g>
+
+  <!-- footer -->
+  <g transform="translate(1100, 580)" font-family="Inter, system-ui, sans-serif"
+     font-size="20" fill="#525252" text-anchor="end">
     <text>deplox.site</text>
   </g>
 </svg>

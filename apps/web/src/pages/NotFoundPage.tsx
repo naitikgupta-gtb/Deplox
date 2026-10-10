@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Logo } from '../components/Logo';
 import { useMeta } from '../lib/use-meta';
 
 /**
@@ -12,6 +13,7 @@ export function NotFoundPage(): JSX.Element {
   });
   return (
     <div className="not-found">
+      <div className="not-found-brand"><Logo size={32} /></div>
       <h1>404</h1>
       <p className="muted">That page does not exist.</p>
       <p>

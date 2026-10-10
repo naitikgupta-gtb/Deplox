@@ -310,6 +310,10 @@ code {
   align-items: center;
   padding: 32px 0 80px;
 }
+.landing .hero .hero-brand {
+  margin-bottom: 28px;
+  color: var(--color-fg);
+}
 .landing .hero h1 {
   font-size: 56px;
   line-height: 1.05;
@@ -904,6 +908,12 @@ button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
   padding: 80px 20px;
   max-width: 480px;
   margin: 0 auto;
+}
+.not-found .not-found-brand {
+  display: inline-flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--color-fg);
 }
 .not-found h1 {
   font-size: 72px;

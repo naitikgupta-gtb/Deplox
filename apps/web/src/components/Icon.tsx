@@ -259,16 +259,14 @@ export function IconBolt(props: IconProps): JSX.Element {
 }
 
 export function IconLogo(props: IconProps): JSX.Element {
+  // Three stacked rounded squares — the deplox brand mark.
+  // Mirrors apps/web/src/components/Logo.tsx so any call site that still
+  // uses <IconLogo /> gets the new icon.
   return (
     <svg {...base(props)} viewBox="0 0 32 32" fill="currentColor" stroke="none">
-      <rect width="32" height="32" rx="6" fill="currentColor" />
-      <text
-        x="50%" y="58%"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fontFamily="ui-monospace, Menlo, Consolas, monospace"
-        fontSize="15" fontWeight="700" fill="#ffffff"
-      >D</text>
+      <rect x={4} y={20} width={18} height={8} rx={2} opacity={0.35} />
+      <rect x={7} y={12} width={18} height={8} rx={2} opacity={0.65} />
+      <rect x={10} y={4} width={18} height={8} rx={2} opacity={1} />
     </svg>
   );
 }

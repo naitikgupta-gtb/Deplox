@@ -1,16 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { User } from '@deplox/shared-types';
-import { IconBook, IconCreditCard, IconGithub, IconLogOut, IconLogo } from './Icon';
-
-function Logo(): JSX.Element {
-  return (
-    <span className="brand">
-      <IconLogo size={22} />
-      deplox
-    </span>
-  );
-}
+import { IconBook, IconCreditCard, IconGithub, IconLogOut } from './Icon';
+import { Logo } from './Logo';
 
 export function Layout({
   user,
@@ -30,7 +22,7 @@ export function Layout({
   return (
     <div className="layout">
       <header className="topbar">
-        <Link to="/" aria-label="Home"><Logo /></Link>
+        <Link to="/" aria-label="deplox home" className="brand"><Logo variant="lockup" size={22} /></Link>
         <nav className="nav">
           {user ? (
             <>

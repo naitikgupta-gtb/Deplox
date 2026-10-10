@@ -10,6 +10,7 @@ import {
   IconRocket,
   IconZap,
 } from '../components/Icon';
+import { Logo } from '../components/Logo';
 import { useMeta } from '../lib/use-meta';
 
 export function LandingPage(): JSX.Element {
@@ -35,6 +36,9 @@ export function LandingPage(): JSX.Element {
 
       <section className="hero">
         <div>
+          <div className="hero-brand" aria-label="deplox">
+            <Logo size={40} variant="lockup" tagline />
+          </div>
           <h1>
             Deploy your GitHub repo.<br />
             <span style={{ color: 'var(--color-fg-muted)' }}>In 2 minutes.</span>

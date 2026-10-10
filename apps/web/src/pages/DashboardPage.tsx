@@ -8,9 +8,9 @@ import {
   FrameworkIcon,
   IconArrowRight,
   IconPlus,
-  IconRocket,
   IconTrash,
 } from '../components/Icon';
+import { Logo } from '../components/Logo';
 
 const FREE_PROJECT_LIMIT = 7;
 
@@ -148,7 +148,7 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
         <p className="muted">Loading…</p>
       ) : projects.length === 0 ? (
         <div className="empty-state">
-          <IconRocket size={28} />
+          <Logo size={36} />
           <h3>No projects yet</h3>
           <p>Connect a GitHub repo to deploy it in under two minutes.</p>
           <Link to="/new" className="primary" style={btnPrimary}>
