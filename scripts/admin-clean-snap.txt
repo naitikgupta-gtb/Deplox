@@ -1,0 +1,33 @@
+Administrator: Windows PowerShell
+# Run this in the admin PowerShell you already have open.
+# It kills EVERY node/cmd that is touching deplox (by CommandLine, not by
+# .Path which is the same for all node installs), then re-runs the
+# DeploxDevServer scheduled task to start the new flash-free dev.mjs.
+
+$targets = Get-CimInstance Win32_Process -Filter "Name='node.exe' or Name='cmd.exe'" | Where-Object {
+    $cl = $_.CommandLine
+    $cl -and ($cl -like '*deplox*' -or $cl -like '*\.pnpm\tsx*' -or $cl -like '*\.pnpm\vite*' -or $cl -like '*node_modules\.bin\tsx*' -or $cl -like '*node_modules\.bin\vite*' -or $cl -like '*scripts\dev.mjs*' -or $cl -like '*preflight.cjs*')
+}
+Write-Host "Killing $($targets.Count) processes:"
+$targets | ForEach-Object { Write-Host "  PID=$($_.ProcessId) $($_.Name)" ; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+# Also kill anything LISTENING on 5173 or 8080 (catches any stragglers)
+foreach ($port in @(5173, 8080)) {
+    Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "  Port $port owner PID=$($_.OwningProcess)" ; Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Wait for ports to clear
+Start-Sleep -Seconds 3
+
+# Confirm
+foreach ($port in @(5173, 8080)) {
+    $still = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    if ($still) { Write-Host "  WARN: port $port still owned by PID $($still.OwningProcess)" } else { Write-Host "  port $port FREE" }
+}
+
+# Re-enable watchdog (if you disabled it earlier) and trigger a fresh start
+Enable-ScheduledTask -TaskName 'deplox-watchdog-ensure' -ErrorAction SilentlyContinue | Out-Null
+schtasks /Run /TN DeploxDevServer
+Write-Host "DeploxDevServer triggered. Wait ~10s for ports to come up."
