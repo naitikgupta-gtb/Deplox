@@ -1,7 +1,7 @@
 // One-off logo generator for DEPLOX.
 //
-// Renders the deplox brand mark (three stacked rounded squares) at every
-// size we need across the web app:
+// Renders the deplox brand mark (three rounded diamonds stacked vertically)
+// at every size we need across the web app:
 //
 //   apps/web/public/apple-touch-icon.png   180 x 180  (iOS home screen)
 //   apps/web/public/icon-192.png           192 x 192  (PWA, Android)
@@ -17,14 +17,22 @@ const sharp = require('sharp');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Dark-mode-first brand mark. White on near-black (#0a0a0a) — matches the
-// favicon.svg and the deplox site background. No gradients, no purple.
+// Dark-mode-first brand mark. White diamonds on near-black (#0a0a0a) —
+// matches the favicon.svg and the deplox site background. No gradients,
+// no purple. Rounded rect rotated 45° gives a clean diamond shape with
+// rounded corners that survives the rotation.
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect width="64" height="64" rx="12" fill="#0a0a0a"/>
-  <rect x="8" y="40" width="36" height="16" rx="4" fill="#fafafa" opacity="0.35"/>
-  <rect x="14" y="24" width="36" height="16" rx="4" fill="#fafafa" opacity="0.65"/>
-  <rect x="20" y="8" width="36" height="16" rx="4" fill="#fafafa" opacity="1"/>
+  <rect x="18" y="26" width="28" height="28" rx="5"
+        fill="#fafafa" opacity="0.3"
+        transform="rotate(45 32 40)"/>
+  <rect x="18" y="18" width="28" height="28" rx="5"
+        fill="#fafafa" opacity="0.6"
+        transform="rotate(45 32 32)"/>
+  <rect x="18" y="10" width="28" height="28" rx="5"
+        fill="#fafafa" opacity="1"
+        transform="rotate(45 32 24)"/>
 </svg>`;
 
 const targets = [

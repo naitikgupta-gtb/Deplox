@@ -1,10 +1,10 @@
 /**
  * Deplox brand mark.
  *
- * Three rounded squares stacked diagonally. The metaphor:
- *   bottom (dim, offset left)    = your repo / source code
- *   middle (mid, centered)       = the build
- *   top    (full, offset right)  = the live HTTPS URL
+ * Three rounded diamonds (rotated squares) stacked vertically:
+ *   bottom (dim, lowest)   = your repo / source code
+ *   middle (mid, centered) = the build
+ *   top    (full, highest) = the live HTTPS URL
  *
  * Strictly monochromatic — uses currentColor so it adapts to the surrounding
  * text color (white in dark mode, black in light mode). No gradients, no
@@ -27,6 +27,17 @@ export interface LogoProps {
 }
 
 const ICON_VIEW = 32;
+// Each diamond is a 14x14 rect rotated 45° around its own center.
+// Centers are at (16, 20), (16, 16), (16, 12) — bottom, middle, top —
+// spaced 4px apart vertically. The rect's rx gives the rounded corners
+// that survive the rotation (Lucide-style).
+const RECT_SIZE = 14;
+const RECT_RX = 2.5;
+const TOP_Y = 5;     // top diamond's unrotated top-left
+const MID_Y = 9;
+const BOT_Y = 13;
+const CENTER_X = 16;
+const RECT_X = CENTER_X - RECT_SIZE / 2;
 
 function MarkSvg({
   size,
@@ -51,9 +62,30 @@ function MarkSvg({
       stroke="none"
       className={className}
     >
-      <rect x={4} y={20} width={18} height={8} rx={2} opacity={0.35} />
-      <rect x={7} y={12} width={18} height={8} rx={2} opacity={0.65} />
-      <rect x={10} y={4} width={18} height={8} rx={2} opacity={1} />
+      {/* bottom diamond — your repo (dim) */}
+      <rect
+        x={RECT_X} y={BOT_Y}
+        width={RECT_SIZE} height={RECT_SIZE}
+        rx={RECT_RX}
+        transform={`rotate(45 ${CENTER_X} ${BOT_Y + RECT_SIZE / 2})`}
+        opacity={0.3}
+      />
+      {/* middle diamond — the build (mid) */}
+      <rect
+        x={RECT_X} y={MID_Y}
+        width={RECT_SIZE} height={RECT_SIZE}
+        rx={RECT_RX}
+        transform={`rotate(45 ${CENTER_X} ${MID_Y + RECT_SIZE / 2})`}
+        opacity={0.6}
+      />
+      {/* top diamond — live URL (full) */}
+      <rect
+        x={RECT_X} y={TOP_Y}
+        width={RECT_SIZE} height={RECT_SIZE}
+        rx={RECT_RX}
+        transform={`rotate(45 ${CENTER_X} ${TOP_Y + RECT_SIZE / 2})`}
+        opacity={1}
+      />
     </svg>
   );
 }

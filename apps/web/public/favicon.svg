@@ -1,10 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- deplox brand mark: three stacked rounded squares.
-       bottom = repo (dim), middle = build (mid), top = live URL (full).
-       Dark rounded background so the mark is visible on light browser tabs
-       (light/dark mode media query handles the rest). -->
+  <!-- deplox brand mark: three rounded diamonds (rotated squares) stacked
+       vertically. bottom = repo (dim), middle = build (mid), top = live
+       URL (full). Dark rounded background so the mark is visible on light
+       browser tabs. Strictly monochromatic — no purple, no gradient. -->
   <rect width="32" height="32" rx="6" fill="#0a0a0a"/>
-  <rect x="4" y="20" width="18" height="8" rx="2" fill="#ffffff" opacity="0.35"/>
-  <rect x="7" y="12" width="18" height="8" rx="2" fill="#ffffff" opacity="0.65"/>
-  <rect x="10" y="4" width="18" height="8" rx="2" fill="#ffffff" opacity="1"/>
+  <rect x="9" y="13" width="14" height="14" rx="2.5"
+        fill="#ffffff" opacity="0.3"
+        transform="rotate(45 16 20)"/>
+  <rect x="9" y="9" width="14" height="14" rx="2.5"
+        fill="#ffffff" opacity="0.6"
+        transform="rotate(45 16 16)"/>
+  <rect x="9" y="5" width="14" height="14" rx="2.5"
+        fill="#ffffff" opacity="1"
+        transform="rotate(45 16 12)"/>
 </svg>

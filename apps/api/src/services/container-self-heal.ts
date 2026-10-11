@@ -25,7 +25,16 @@ import { docker } from './docker/real.js';
 const log = childLogger({ component: 'container-self-heal' });
 
 const PERIODIC_INTERVAL_MS = 30_000;
-const HEALTH_PROBE_TIMEOUT_MS = 2000;
+const HEALTH_PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * Skip the TCP probe (and the resulting `docker restart`) for containers
+ * that are still warming up. Vite/Next dev servers can take 60-90s to
+ * bind the port after container start; without this grace window, self-heal
+ * hard-restarts a healthy container the moment the probe fires before the
+ * dev server is up, which manifests as flapping 502s on deplox.site.
+ */
+const STARTUP_GRACE_MS = 90_000;
 
 /**
  * TCP-level reachability probe for a deplox-deployed container.
@@ -37,8 +46,13 @@ const HEALTH_PROBE_TIMEOUT_MS = 2000;
  * we trade a few false-positive restarts (during slow app boot) for
  * catching the real "app is wedged" case within 30s instead of forever.
  *
- * Uses `host.docker.internal` because the API runs inside a container
- * and the deplox app's exposed port is published to the host network.
+ * Connects to 127.0.0.1 (loopback) because the deplox app's exposed port
+ * is published to the host network, and the API process runs on the host
+ * (via `pnpm dev` / `tsx watch`). `host.docker.internal` is a Docker
+ * Desktop feature meant for in-container use; it does not always resolve
+ * on the host, which caused every probe to fail and every container to
+ * be restarted every 30s — the SIGTERM kept killing the slow-booting
+ * apps (Vite/Next dev servers) before they could bind the port.
  */
 async function probeHostPort(hostPort: number, timeoutMs: number): Promise<boolean> {
   const net = await import('node:net');
@@ -55,7 +69,7 @@ async function probeHostPort(hostPort: number, timeoutMs: number): Promise<boole
     sock.once('connect', () => finish(true));
     sock.once('timeout', () => finish(false));
     sock.once('error', () => finish(false));
-    sock.connect(hostPort, 'host.docker.internal');
+    sock.connect(hostPort, '127.0.0.1');
   });
 }
 
@@ -102,7 +116,13 @@ export async function selfHealContainers(): Promise<SelfHealResult> {
         // host port and `docker restart` (hard restart) if it doesn't
         // respond. Uses host.docker.internal because we're inside Docker
         // and the container's exposed port is published to the host.
-        if (row.hostPort) {
+        //
+        // Skip the probe for the first STARTUP_GRACE_MS after a container
+        // (re)start — dev servers can take that long to bind the port and
+        // the probe would otherwise flap the container on every tick.
+        const startedAt = info.State.StartedAt ? new Date(info.State.StartedAt).getTime() : 0;
+        const warm = startedAt > 0 && Date.now() - startedAt < STARTUP_GRACE_MS;
+        if (row.hostPort && !warm) {
           const healthy = await probeHostPort(row.hostPort, 2000);
           if (!healthy) {
             log.warn(

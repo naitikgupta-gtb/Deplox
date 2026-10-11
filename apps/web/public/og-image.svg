@@ -9,12 +9,21 @@
   <!-- background -->
   <rect width="1200" height="630" fill="url(#bg)"/>
 
-  <!-- brand mark — three stacked squares, top-right -->
-  <g transform="translate(80, 80)">
-    <rect x="8" y="40" width="36" height="16" rx="4" fill="#fafafa" opacity="0.35"/>
-    <rect x="14" y="24" width="36" height="16" rx="4" fill="#fafafa" opacity="0.65"/>
-    <rect x="20" y="8" width="36" height="16" rx="4" fill="#fafafa" opacity="1"/>
-    <text x="74" y="32"
+  <!-- brand mark — three rounded diamonds, top-left -->
+  <g transform="translate(80, 60)">
+    <!-- bottom diamond (dim) -->
+    <rect x="18" y="26" width="28" height="28" rx="5"
+          fill="#fafafa" opacity="0.3"
+          transform="rotate(45 32 40)"/>
+    <!-- middle diamond (mid) -->
+    <rect x="18" y="18" width="28" height="28" rx="5"
+          fill="#fafafa" opacity="0.6"
+          transform="rotate(45 32 32)"/>
+    <!-- top diamond (full) -->
+    <rect x="18" y="10" width="28" height="28" rx="5"
+          fill="#fafafa" opacity="1"
+          transform="rotate(45 32 24)"/>
+    <text x="80" y="38"
           font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600"
           fill="#fafafa" letter-spacing="-0.04em">deplox</text>
   </g>
