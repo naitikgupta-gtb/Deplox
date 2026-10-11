@@ -25,11 +25,17 @@ $env:PATH = 'C:\nvm4w\nodejs;' + 'C:\Users\naiti\AppData\Roaming\npm;' + 'C:\Pro
 
 # Start pnpm dev fully detached. No -Wait, no -PassThru — we want to
 # return to Task Scheduler immediately so the task is marked Completed.
+#
+# We use scripts/dev.mjs (not raw `pnpm -r --parallel`) so each child
+# pnpm process gets `windowsHide: true` on Windows. Otherwise pnpm -r
+# spawns one cmd.exe per app and those console windows flash on the
+# user's screen every time the dev server restarts.
 $logDir = 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox\.runlogs\services'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null }
+$devScript = 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox\scripts\dev.mjs'
 Start-Process `
-  -FilePath 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
-  -ArgumentList 'dev' `
+  -FilePath 'C:\nvm4w\nodejs\node.exe' `
+  -ArgumentList "`"$devScript`"" `
   -WorkingDirectory 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox' `
   -WindowStyle Hidden `
   -RedirectStandardOutput "$logDir\pnpm-dev.out.log" `

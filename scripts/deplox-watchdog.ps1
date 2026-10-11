@@ -88,9 +88,12 @@ function Restart-Pnpm-Dev {
       -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$launcher`"" `
       -WorkingDirectory $Deplox -WindowStyle Hidden
   } else {
-    Log "    launcher missing ($launcher) - falling back to inline pnpm dev"
-    Start-Process -FilePath 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
-      -ArgumentList 'dev' `
+    # Direct fallback: spawn node running scripts/dev.mjs (which uses
+    # windowsHide:true on each child) so we don't flash cmd windows.
+    Log "    launcher missing ($launcher) - falling back to node scripts/dev.mjs"
+    $devScript = Join-Path $Deplox 'scripts\dev.mjs'
+    Start-Process -FilePath 'C:\nvm4w\nodejs\node.exe' `
+      -ArgumentList "`"$devScript`"" `
       -WorkingDirectory $Deplox -WindowStyle Hidden `
       -RedirectStandardOutput "$Deplox\.runlogs\services\pnpm-dev.out.log" `
       -RedirectStandardError "$Deplox\.runlogs\services\pnpm-dev.err.log"
