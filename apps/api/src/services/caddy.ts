@@ -182,6 +182,59 @@ async function purgeAllDeploxRoutes(): Promise<number> {
 }
 
 /**
+ * The catch-all route for `deplox.site` itself (the marketing page and
+ * dashboard) — the one defined in the Caddyfile as `:8000 { reverse_proxy
+ * host.docker.internal:5173 }`. It has no `@id` and no host matcher, so it
+ * greedily serves every request on :8000 that no more-specific route
+ * matched. We re-add it from the API in case a previous `primeCaddyRoutes`
+ * run (or a stale Caddy admin state) lost it — without it, `deplox.site`
+ * returns 0 bytes and the dashboard 502s.
+ *
+ * Idempotent: skips the POST if a catch-all with the same upstream is
+ * already present.
+ */
+async function ensureDeploxSiteCatchAll(): Promise<boolean> {
+  const desiredUpstream = 'host.docker.internal:5173';
+  const list = await adminRequest({
+    method: 'GET',
+    path: '/config/apps/http/servers/srv0/routes/',
+  });
+  if (!list.ok) return false;
+  let current: Array<Record<string, unknown>>;
+  try {
+    current = JSON.parse(list.message) as Array<Record<string, unknown>>;
+  } catch {
+    return false;
+  }
+  const exists = current.some((r) => {
+    if (r['@id']) return false;
+    if (!Array.isArray(r.handle)) return false;
+    const h = r.handle[0] as Record<string, unknown> | undefined;
+    if (!h || h.handler !== 'reverse_proxy') return false;
+    const ups = h.upstreams as Array<{ dial?: string }> | undefined;
+    return Array.isArray(ups) && ups[0]?.dial === desiredUpstream;
+  });
+  if (exists) return true;
+  const reAdd = await adminRequest({
+    method: 'POST',
+    path: '/config/apps/http/servers/srv0/routes/',
+    body: {
+      handle: [
+        {
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: desiredUpstream }],
+        },
+      ],
+      terminal: true,
+    },
+  });
+  if (reAdd.ok) {
+    log.info('re-added deplox.site catch-all route (forwards to Vite on 5173)');
+  }
+  return reAdd.ok;
+}
+
+/**
  * Insert a route at the front of the routes array. Critical: Caddy evaluates
  * routes in array order and does NOT auto-reorder by specificity. The
  * catch-all (no matcher, defined in the Caddyfile) is at index 0, so any
@@ -463,4 +516,12 @@ export async function primeCaddyRoutes(): Promise<void> {
       log.info({ deploymentId: row.deploymentId, newUrl: shortUrl }, 'backfilled public_url with auto subdomain');
     }
   }
+
+  // 4) Ensure the `deplox.site` catch-all (no @id, no host matcher) is
+  //    present. Without it, the main domain and dashboard return 0 bytes
+  //    because no specific route matches the request. The catch-all defined
+  //    in the Caddyfile should normally survive, but earlier
+  //    insertRouteAtFront reordering + auto-save timing could lose it; this
+  //    is a cheap safety net on every API startup.
+  await ensureDeploxSiteCatchAll();
 }
