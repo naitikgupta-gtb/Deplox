@@ -106,7 +106,14 @@ export async function selfHealContainers(): Promise<SelfHealResult> {
   for (const row of rows) {
     if (!row.containerId) continue;
     try {
-      const container = docker.getContainer(row.containerId);
+      // `docker.getContainer` returns a Container but the dockerode 4 type
+      // declarations don't expose inspect/restart in a way tsc picks up; cast
+      // through `any` at the call site rather than polluting the whole module.
+      const container = docker.getContainer(row.containerId) as unknown as {
+        inspect(): Promise<{ State?: { Running?: boolean; StartedAt?: string } }>;
+        restart(opts?: { t?: number }): Promise<void>;
+        start(): Promise<void>;
+      };
       const info = await container.inspect();
       if (info.State?.Running) {
         // Container is up — but is the app inside actually serving? The

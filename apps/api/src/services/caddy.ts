@@ -104,24 +104,81 @@ async function adminRequest(opts: AdminOpts): Promise<AdminResult> {
 }
 
 /**
- * Find the routes-array index of a route by its @id, or null if not present.
- * Used by unregister* so we can DELETE the right index without disturbing
- * other dynamic routes.
+ * Find the routes-array indexes of every route with the given @id, in array
+ * order. Returns [] if not present.
+ *
+ * Why plural: prior versions of this function returned only the FIRST match
+ * via `findIndex`, which meant that if an earlier run of the priming loop
+ * had left duplicate `@id` entries in Caddy (e.g. because a previous
+ * version of `insertRouteAtFront` re-POSTed before the prior DELETE
+ * committed), the duplicate survived. Once multiple routes share an @id,
+ * Caddy's match logic still picks the first one in array order — which can
+ * shadow later routes that the user expected to match. `unregisterAuto*` and
+ * `purgeAllDeploxRoutes` use this function to find and remove every copy.
  */
-async function findRouteIndex(id: string): Promise<number | null> {
+async function findRouteIndexes(id: string): Promise<number[]> {
   const list = await adminRequest({
     method: 'GET',
     path: '/config/apps/http/servers/srv0/routes/',
   });
-  if (!list.ok) return null;
+  if (!list.ok) return [];
   let routes: Array<{ '@id'?: string }>;
   try {
     routes = JSON.parse(list.message) as Array<{ '@id'?: string }>;
   } catch {
-    return null;
+    return [];
   }
-  const idx = routes.findIndex((r) => r['@id'] === id);
-  return idx >= 0 ? idx : null;
+  const out: number[] = [];
+  routes.forEach((r, i) => {
+    if (r['@id'] === id) out.push(i);
+  });
+  return out;
+}
+
+/** Backwards-compatible single-index lookup. Returns the first match or null. */
+async function findRouteIndex(id: string): Promise<number | null> {
+  const all = await findRouteIndexes(id);
+  return all.length > 0 ? all[0]! : null;
+}
+
+/**
+ * Delete every deplox-managed route (id starting with `deplox-`) from the
+ * Caddy routes array, in reverse order so the indexes we collect up front
+ * stay valid as we DELETE. The bare catch-all (no @id) is preserved.
+ *
+ * Called at the top of `primeCaddyRoutes` to guarantee a clean slate — the
+ * previous behavior only deleted routes that already existed with the
+ * project's @id, which left orphans from earlier buggy runs and led to
+ * "subdomain opens the main app" symptoms on the user side.
+ */
+async function purgeAllDeploxRoutes(): Promise<number> {
+  const list = await adminRequest({
+    method: 'GET',
+    path: '/config/apps/http/servers/srv0/routes/',
+  });
+  if (!list.ok) return 0;
+  let routes: Array<{ '@id'?: string }>;
+  try {
+    routes = JSON.parse(list.message) as Array<{ '@id'?: string }>;
+  } catch {
+    return 0;
+  }
+  const idxs: number[] = [];
+  routes.forEach((r, i) => {
+    if (typeof r['@id'] === 'string' && r['@id'].startsWith('deplox-')) {
+      idxs.push(i);
+    }
+  });
+  for (const i of idxs.reverse()) {
+    const del = await adminRequest({
+      method: 'DELETE',
+      path: `/config/apps/http/servers/srv0/routes/${i}`,
+    });
+    if (!del.ok) {
+      log.warn({ idx: i, status: del.status }, 'failed to delete duplicate deplox route during purge');
+    }
+  }
+  return idxs.length;
 }
 
 /**
@@ -143,12 +200,16 @@ async function findRouteIndex(id: string): Promise<number | null> {
  * because nothing else in our flow produces a route without an @id.
  */
 async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
-  // 1) Drop any existing route with the same @id so the new port / host wins.
-  const existingIdx = await findRouteIndex(route['@id']);
-  if (existingIdx !== null) {
+  // 1) Drop EVERY existing route with the same @id so the new port / host
+  //    wins. We must delete in reverse order to keep the indexes stable.
+  //    A prior version of this function only deleted the first match, which
+  //    left orphan duplicates from earlier buggy runs and shadowed later
+  //    routes (see findRouteIndexes for the full story).
+  const existingIdxs = (await findRouteIndexes(route['@id'])).reverse();
+  for (const idx of existingIdxs) {
     const del = await adminRequest({
       method: 'DELETE',
-      path: `/config/apps/http/servers/srv0/routes/${existingIdx}`,
+      path: `/config/apps/http/servers/srv0/routes/${idx}`,
     });
     if (!del.ok) return false;
   }
@@ -327,6 +388,17 @@ export async function primeCaddyRoutes(): Promise<void> {
   const { db } = await import('../db/client.js');
   const { deployments, projects } = await import('../db/schema.js');
   const { buildAutoSubdomain } = await import('./deployment-orchestrator.js');
+
+  // Start from a clean slate: a prior version of `insertRouteAtFront` could
+  // leave duplicate `@id` entries behind if a priming run was interrupted
+  // mid-loop, and Caddy then matches only the first one — so a subdomain
+  // would silently fall through to the catch-all and serve the deplox
+  // main app. Purging every `deplox-*` route here is cheap (one GET, a
+  // handful of DELETEs) and gives the loop below a clean array to fill.
+  const purged = await purgeAllDeploxRoutes();
+  if (purged > 0) {
+    log.info({ purged }, 'purged stale deplox routes before priming');
+  }
 
   const rows = await db
     .select({

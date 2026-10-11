@@ -473,8 +473,9 @@ async function findSubdomainCollision(
       AND project_id <> ${excludeProjectId}
     LIMIT 1
   `);
-  // db.execute returns { rows: [...] } in postgres-js
-  const arr = (rows as { rows?: unknown[] }).rows ?? (rows as unknown[]);
+  // db.execute returns { rows: [...] } in postgres-js. Cast through unknown
+  // to satisfy tsc's "no overlap between QueryResult and unknown[]" check.
+  const arr = (rows as unknown as { rows?: unknown[] }).rows ?? (rows as unknown as unknown[]);
   return Array.isArray(arr) && arr.length > 0;
 }
 
