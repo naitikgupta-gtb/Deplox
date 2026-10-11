@@ -1,17 +1,25 @@
 // DEPLOX dev runner — starts the API, Vite, and worker dev processes for the
-// monorepo WITHOUT going through pnpm.cmd. pnpm.cmd is a .bat shim that
-// always opens a cmd.exe window briefly on Windows (even with
-// windowsHide:true on the spawn, the .bat re-exec pattern creates a fresh
-// cmd.exe that does not inherit the flag), which is what the user sees
-// flashing on their screen.
+// monorepo WITHOUT going through pnpm.cmd or the .cmd shims under
+// node_modules/.bin. pnpm.cmd and .cmd batch files on Windows force the
+// kernel to spawn cmd.exe, which is a console app and ALWAYS allocates a
+// console window briefly even when the parent passes windowsHide:true
+// (the CREATE_NO_WINDOW flag is not inherited through the cmd.exe
+// intermediate). This is the blank black "Command Prompt" the user kept
+// seeing on the desktop every time pnpm dev restarted.
 //
-// Instead of `pnpm --filter X run dev`, we read the dev script out of each
-// app's package.json and execute it directly with `npx`. No cmd.exe, no
-// .bat shim, no flash. `windowsHide: true` on the child node process is
-// belt-and-suspenders for any subprocess the dev tool might spawn.
+// Instead, for each app we read its dev script out of package.json,
+// resolve the first token (e.g. "tsx", "vite") to the actual JS entry
+// point by reading the package's `bin` field via require.resolve, and
+// then spawn `node` with that file. No .cmd, no cmd.exe, no flash.
+// windowsHide:true on a direct node child reliably hides the console.
+//
+// If a bin can't be resolved we fall back to the .cmd shim with
+// shell:false + windowsHide:true (which still flashes but at least
+// keeps the dev process working while we report the missing dep).
 
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 
@@ -24,12 +32,6 @@ const APPS = [
   { name: 'worker', cwd: 'apps/worker', scriptKey: 'dev' },
 ];
 
-// Read each app's dev script from its package.json and tokenize it. We
-// support the common cases:
-//   "dev": "tsx watch --env-file=../../.env src/index.ts"
-//   "dev": "vite --port 5173 --host"
-// The script string is split on whitespace, respecting double quotes so
-// paths with spaces (none today, but cheap to be safe) stay one token.
 function tokenizeScript(script) {
   const tokens = [];
   let cur = '';
@@ -55,30 +57,69 @@ function loadAppDevScript(app) {
   return tokenizeScript(script);
 }
 
+// Resolve a bin name (e.g. "tsx") to the absolute path of the JS entry
+// point the package's `bin` field declares, by walking up from the app
+// cwd to find the package via Node's resolution algorithm. Returns
+// null if not found — caller falls back to .cmd shim.
+function resolveBinEntry(cwd, binName) {
+  try {
+    const require = createRequire(join(cwd, 'noop.js'));
+    const pkgJsonPath = require.resolve(`${binName}/package.json`, { paths: [cwd] });
+    const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'));
+    const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.[binName];
+    if (!binRel) return null;
+    const pkgDir = dirname(pkgJsonPath);
+    return join(pkgDir, binRel);
+  } catch {
+    return null;
+  }
+}
+
+const children = [];
+
 function startApp(app) {
   const cwd = resolve(deplox, app.cwd);
   const [bin, ...args] = loadAppDevScript(app);
-  // Resolve to an absolute path if it's a local dep (npx-style). tsx and
-  // vite are both deps of @deplox/api / @deplox/web in node_modules.
-  // Spawning them with `npx` would re-introduce the .cmd shim, so we
-  // skip npx and call node_modules/.bin/<bin> directly.
-  const binPath = join(cwd, 'node_modules', '.bin', bin + (process.platform === 'win32' ? '.cmd' : ''));
-  const useShell = process.platform === 'win32' && binPath.endsWith('.cmd');
+  const entry = resolveBinEntry(cwd, bin);
 
-  const child = spawn(
-    useShell ? binPath : process.execPath, // node for .js, cmd for .cmd
-    useShell ? args : [binPath, ...args],
-    {
-      cwd,
-      shell: useShell,
-      windowsHide: true,
-      stdio: ['ignore', 'inherit', 'inherit'],
-      env: { ...process.env, FORCE_COLOR: '1' },
-    },
-  );
+  let child;
+  if (entry && existsSync(entry)) {
+    // Direct: spawn node with the package's actual JS entry. No cmd.exe
+    // intermediate, so windowsHide:true works and the kernel gives the
+    // child no console.
+    child = spawn(
+      process.execPath,
+      [entry, ...args],
+      {
+        cwd,
+        windowsHide: true,
+        stdio: ['ignore', 'inherit', 'inherit'],
+        env: { ...process.env, FORCE_COLOR: '1' },
+      },
+    );
+    console.log(`[dev] ${app.name}: node ${entry} ${args.join(' ')}`);
+  } else {
+    // Fallback: use the .cmd shim via shell:false. windowsHide still
+    // works on the direct cmd.exe child, but the .cmd re-exec pattern
+    // means a brief window can appear. Better than nothing.
+    const binPath = join(cwd, 'node_modules', '.bin', bin + '.cmd');
+    console.warn(`[dev] ${app.name}: could not resolve ${bin} entry — falling back to ${binPath}`);
+    child = spawn(
+      'cmd.exe',
+      ['/d', '/s', '/c', `"${binPath}" ${args.map(a => `"${a}"`).join(' ')}`],
+      {
+        cwd,
+        windowsHide: true,
+        stdio: ['ignore', 'inherit', 'inherit'],
+        env: { ...process.env, FORCE_COLOR: '1' },
+        windowsVerbatimArguments: true,
+      },
+    );
+    console.log(`[dev] ${app.name}: cmd.exe ${binPath} ${args.join(' ')}`);
+  }
 
   child.on('exit', (code, signal) => {
-    console.error(`[dev] ${app.name} exited code=${code} signal=${signal} — killing siblings`);
+    console.error(`[dev] ${app.name} exited code=${code} signal=${signal} - killing siblings`);
     for (const other of children) {
       if (other !== child && other.exitCode === null) {
         try { other.kill('SIGTERM'); } catch {}
@@ -87,11 +128,18 @@ function startApp(app) {
     setTimeout(() => process.exit(code ?? 1), 1500);
   });
 
-  console.log(`[dev] started ${app.name} (pid ${child.pid}) via ${useShell ? binPath : process.execPath} ${args.join(' ')}`);
+  children.push(child);
   return child;
 }
 
-const children = APPS.map(startApp);
+for (const app of APPS) {
+  try {
+    startApp(app);
+  } catch (e) {
+    console.error(`[dev] failed to start ${app.name}: ${e.message}`);
+    process.exit(1);
+  }
+}
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
