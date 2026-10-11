@@ -1,14 +1,30 @@
-# DEPLOX watchdog — runs forever, ensures dev/api + dev/web + cloudflared are
-# always up. Designed to be started at user logon by Task Scheduler.
+# DEPLOX watchdog - runs forever, ensures pnpm dev (API :8080 + Vite :5173)
+# and cloudflared are always up. Designed to be started at user logon by
+# Task Scheduler, OR run as a 5-min recurring task.
 #
 # Every 15s it checks:
-#   1) docker daemon — if down, start Docker Desktop and wait
-#   2) deplox-deployed app containers — `docker ps` should show them running
-#   3) API on :8080 — restart `pnpm dev:api` if missing
-#   4) Vite on :5173 — restart `pnpm dev:web` if missing
-#   5) cloudflared tunnel — restart if not running
+#   1) docker daemon - if down, start Docker Desktop and wait
+#   2) deplox-deployed app containers - `docker ps` should show them running
+#   3) pnpm dev - covers BOTH API :8080 and Vite :5173. If either port is
+#      missing we treat the whole dev as down and restart it via the same
+#      Task-Scheduler-safe launcher (`scripts/start-pnpm-dev.ps1`) that
+#      `DeploxDevServer` uses.
+#   4) cloudflared tunnel - restart if not running
+#
+# pnpm dev restart kills any node.exe holding port 5173 or 8080 first (in
+# case a half-crashed pnpm dev left a zombie listener), then spawns a fresh
+# `pnpm dev` via the launcher. The launcher detaches the child + writes
+# logs, so this script returns immediately and Task Scheduler doesn't see
+# the watchdog as "stuck Running".
 #
 # Logs every action to .runlogs/watchdog.log
+
+# Force UTF-8 read so non-ASCII characters in messages (e.g. the em-dash
+# we used to use) don't get mangled into `???` question marks by the
+# default ASCII codepage on this Windows install.
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ErrorActionPreference = 'Continue'
 $Deplox = 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox'
 $LogFile = "$Deplox\.runlogs\watchdog.log"
@@ -28,21 +44,56 @@ function Port-Listening {
   return $null -ne $conn
 }
 
+function Port-Owner-Pid {
+  param([int]$Port)
+  $conn = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+          Where-Object { $_.LocalPort -eq $Port } |
+          Select-Object -First 1
+  if ($conn) { return $conn.OwningProcess } else { return $null }
+}
+
 function Process-Running {
   param([string]$Name)
   $p = Get-Process -Name $Name -ErrorAction SilentlyContinue
   return $null -ne $p
 }
 
-function Start-IfNot {
-  param([string]$Title, [string]$Exe, [string]$Args, [string]$WorkingDir = $Deplox)
-  if (-not (Process-Running $Title)) {
-    Log "  starting $Title (was down)"
-    try {
-      Start-Process -FilePath $Exe -ArgumentList $Args -WorkingDirectory $WorkingDir -WindowStyle Hidden
-    } catch {
-      Log "  FAILED to start $Title: $_"
+function Restart-Pnpm-Dev {
+  Log "  restarting pnpm dev (ports 5173/8080 missing)"
+
+  # 1) Kill any stale node.exe holding either port. pnpm dev forks API + Vite,
+  #    so the listeners are node processes, not pnpm. We use the OwningProcess
+  #    from Get-NetTCPConnection so we don't accidentally kill unrelated
+  #    node processes (e.g. cloudflared, or future workers).
+  foreach ($port in @(5173, 8080)) {
+    $pidOwner = Port-Owner-Pid $port
+    if ($pidOwner -and $pidOwner -gt 0) {
+      try {
+        $p = Get-Process -Id $pidOwner -ErrorAction SilentlyContinue
+        if ($p -and $p.ProcessName -eq 'node') {
+          Log "    killing stale node.exe PID=$pidOwner (port $port)"
+          Stop-Process -Id $pidOwner -Force -ErrorAction SilentlyContinue
+        } else {
+          Log "    port $port owned by non-node process $pidOwner ($($p.ProcessName)) - leaving alone"
+        }
+      } catch {}
     }
+  }
+
+  # 2) Spawn a fresh pnpm dev via the canonical launcher. That launcher
+  #    detaches the child + writes logs, so we just return.
+  $launcher = Join-Path $Deplox 'scripts\start-pnpm-dev.ps1'
+  if (Test-Path $launcher) {
+    Start-Process -FilePath 'powershell.exe' `
+      -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$launcher`"" `
+      -WorkingDirectory $Deplox -WindowStyle Hidden
+  } else {
+    Log "    launcher missing ($launcher) - falling back to inline pnpm dev"
+    Start-Process -FilePath 'C:\Users\naiti\AppData\Roaming\npm\pnpm.cmd' `
+      -ArgumentList 'dev' `
+      -WorkingDirectory $Deplox -WindowStyle Hidden `
+      -RedirectStandardOutput "$Deplox\.runlogs\services\pnpm-dev.out.log" `
+      -RedirectStandardError "$Deplox\.runlogs\services\pnpm-dev.err.log"
   }
 }
 
@@ -73,7 +124,7 @@ while ($true) {
     if ($LASTEXITCODE -ne 0) { throw 'not ready' }
   } catch {
     $needsAction = $true
-    Log "Docker daemon down — starting Docker Desktop"
+    Log "Docker daemon down - starting Docker Desktop"
     Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -WindowStyle Hidden
     Start-Sleep -Seconds 30
     continue
@@ -83,7 +134,7 @@ while ($true) {
   $caddy = docker ps -a --filter 'name=infra-caddy-1' --format '{{.Names}} {{.Status}}' 2>$null
   if ($caddy -notmatch 'Up ') {
     $needsAction = $true
-    Log "Caddy container not running: '$caddy' — starting"
+    Log "Caddy container not running: '$caddy' - starting"
     docker start infra-caddy-1 2>&1 | Out-Null
   }
 
@@ -98,40 +149,29 @@ while ($true) {
     $st = docker ps -a --filter "name=$c" --format '{{.Status}}' 2>$null
     if ($st -notmatch '^Up ') {
       $needsAction = $true
-      Log "App container $c down ($st) — starting"
+      Log "App container $c down ($st) - starting"
       docker start $c 2>&1 | Out-Null
     }
   }
 
-  # 4) API on :8080
-  if (-not (Port-Listening 8080)) {
+  # 4) pnpm dev (covers both API :8080 and Vite :5173). If either port is
+  #    missing we treat the whole pnpm dev as down and restart it.
+  if ((-not (Port-Listening 8080)) -or (-not (Port-Listening 5173))) {
     $needsAction = $true
-    Log "API :8080 not listening — starting pnpm dev:api"
-    Start-Process -FilePath 'C:\nvm4w\nodejs\node.exe' `
-      -ArgumentList 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1','dev:api' `
-      -WorkingDirectory $Deplox -WindowStyle Hidden
+    Restart-Pnpm-Dev
   }
 
-  # 5) Vite on :5173
-  if (-not (Port-Listening 5173)) {
-    $needsAction = $true
-    Log "Vite :5173 not listening — starting pnpm dev:web"
-    Start-Process -FilePath 'C:\nvm4w\nodejs\node.exe' `
-      -ArgumentList 'C:\Users\naiti\AppData\Roaming\npm\pnpm.ps1','dev:web' `
-      -WorkingDirectory $Deplox -WindowStyle Hidden
-  }
-
-  # 6) Cloudflare tunnel
+  # 5) Cloudflare tunnel
   if (-not (Process-Running 'cloudflared')) {
     $needsAction = $true
-    Log "cloudflared not running — starting tunnel"
+    Log "cloudflared not running - starting tunnel"
     Start-Process -FilePath 'C:\Program Files (x86)\cloudflared\cloudflared.exe' `
       -ArgumentList 'tunnel','--config','C:\Users\naiti\.cloudflared\config.yml','run','deplox-prod' `
       -WindowStyle Hidden
   }
 
   if (-not $needsAction) {
-    # All healthy — log less frequently to avoid spam
+    # All healthy - log less frequently to avoid spam
     if ((Get-Date).Minute % 5 -eq 0 -and (Get-Date).Second -lt 20) {
       Log "all healthy"
     }
