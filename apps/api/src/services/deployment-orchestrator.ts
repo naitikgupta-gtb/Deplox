@@ -23,6 +23,7 @@ import { cloneRepo, disposeClone, type CloneResult } from './github.js';
 import { allocatePort, releasePort } from './port-allocator.js';
 import { getDockerProvider } from './docker/provider.js';
 import { decrypt } from './encryption.js';
+import { pingIndexNow } from './indexnow.js';
 import {
   appendLog,
   appendError,
@@ -234,6 +235,11 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     }
 
     log.info({ deploymentId, publicUrl, autoSubdomain }, 'deployment running');
+
+    // Fire-and-forget: tell IndexNow the new publicUrl exists so Bing /
+    // Yandex / DDG re-crawl within minutes. Failures are logged but never
+    // thrown — the deployment is already live and serving traffic.
+    if (publicUrl) pingIndexNow(publicUrl);
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     appendError(deploymentId, message);
