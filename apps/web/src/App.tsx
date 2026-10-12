@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { User } from '@deplox/shared-types';
 import { fetchMe } from './lib/api';
 import { Layout } from './components/Layout';
+import { DashboardLayout } from './components/DashboardLayout';
 import { LandingPage } from './pages/LandingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { NewProjectPage } from './pages/NewProjectPage';
@@ -32,37 +33,46 @@ export function App(): JSX.Element {
     return <div className="loading">Loading…</div>;
   }
 
+  // Signed-in dashboard routes: sidebar layout.
+  // Public + auth routes: simple top-nav layout.
+  if (user) {
+    return (
+      <DashboardLayout user={user}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage user={user} />} />
+          <Route path="/new" element={<NewProjectPage />} />
+          <Route path="/projects/:projectId" element={<ProjectPage />} />
+          <Route path="/projects/:projectId/deployments/:deploymentId" element={<DeploymentPage />} />
+          <Route path="/billing" element={<BillingPage user={user} />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/founding" element={<FoundingMemberPage />} />
+          <Route path="/docs" element={<DocsPage />} />
+          <Route path="/status" element={<StatusPage />} />
+          <Route path="/changelog" element={<ChangelogPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <Layout user={user}>
       <Routes>
-        <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
-        <Route
-          path="/dashboard"
-          element={user ? <DashboardPage user={user} /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/new"
-          element={user ? <NewProjectPage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/projects/:projectId"
-          element={user ? <ProjectPage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/projects/:projectId/deployments/:deploymentId"
-          element={user ? <DeploymentPage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/billing"
-          element={user ? <BillingPage user={user} /> : <Navigate to="/pricing" replace />}
-        />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/new" element={<Navigate to="/" replace />} />
+        <Route path="/projects/:projectId" element={<Navigate to="/" replace />} />
+        <Route path="/projects/:projectId/deployments/:deploymentId" element={<Navigate to="/" replace />} />
+        <Route path="/billing" element={<Navigate to="/pricing" replace />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/founding" element={<FoundingMemberPage />} />
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/changelog" element={<ChangelogPage />} />
         <Route path="/about" element={<AboutPage />} />
-        <Route path="*" element={user ? <NotFoundPage /> : <Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );
