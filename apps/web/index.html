@@ -9,6 +9,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0a0a" />
 
+    <!-- Apply persisted theme BEFORE React mounts so the first paint is
+         the right color (no white flash when user prefers black). -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('deplox-theme');
+          var theme = saved || 'system';
+          if (theme === 'black' || theme === 'white' || theme === 'system') {
+            document.documentElement.setAttribute('data-theme', theme);
+          }
+        } catch (e) { /* localStorage unavailable, leave default */ }
+      })();
+    </script>
+
     <!-- Primary SEO -->
     <title>DEPLOX — Deploy your GitHub repo in 2 minutes</title>
     <meta

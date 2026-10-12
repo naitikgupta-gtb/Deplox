@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { Deployment, Project, User } from '@deplox/shared-types';
-import { api } from '../lib/api';
+import { api, type WebhookInfo } from '../lib/api';
 import {
   IconExternalLink,
   FrameworkIcon,
@@ -10,13 +10,38 @@ import {
   IconCheck,
   IconX,
   IconArrowUpRight,
+  IconCopy,
+  IconRefresh,
 } from '../components/Icon';
-import { IconCircleDashed } from '../components/IconNav';
+import { IconCircleDashed, IconActivity, IconWebhooks, IconBell } from '../components/IconNav';
 
 const FREE_PROJECT_LIMIT = 7;
 
+type Section = 'overview' | 'activity' | 'webhooks' | 'observability' | 'notifications' | 'settings';
+
+function sectionFromHash(hash: string): Section {
+  const h = hash.replace(/^#/, '');
+  switch (h) {
+    case 'activity':
+      return 'activity';
+    case 'webhooks':
+      return 'webhooks';
+    case 'observability':
+      return 'observability';
+    case 'notifications':
+      return 'notifications';
+    case 'settings':
+      return 'settings';
+    default:
+      return 'overview';
+  }
+}
+
 export function DashboardPage({ user }: { user: User }): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
+  const section = sectionFromHash(location.hash);
+
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [deployments, setDeployments] = useState<Record<string, Deployment[]>>({});
   const [removing, setRemoving] = useState<string | null>(null);
@@ -42,6 +67,14 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
   useEffect(() => {
     refresh();
   }, []);
+
+  // For "Activity" hash, scroll to the section after data loads.
+  useEffect(() => {
+    if (section === 'activity' && projects !== null) {
+      const el = document.getElementById('activity');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [section, projects]);
 
   async function handleRemove(p: Project, ev: React.MouseEvent): Promise<void> {
     ev.preventDefault();
@@ -81,6 +114,19 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
     );
     return items.slice(0, 8);
   }, [projects, deployments]);
+
+  if (section === 'webhooks') {
+    return <WebhooksSection projects={projects} />;
+  }
+  if (section === 'observability') {
+    return <ObservabilitySection projects={projects} deployments={deployments} />;
+  }
+  if (section === 'notifications') {
+    return <NotificationsSection user={user} />;
+  }
+  if (section === 'settings') {
+    return <SettingsSection user={user} />;
+  }
 
   return (
     <div className="dash-page">
@@ -273,6 +319,471 @@ function StatusBadge({
     <span className="dash-badge dash-badge--muted">
       <IconCircleDashed size={12} /> {compact ? deployment.status : deployment.status}
     </span>
+  );
+}
+
+// =============================================================================
+// Webhooks section
+// =============================================================================
+
+function WebhooksSection({ projects }: { projects: Project[] | null }): JSX.Element {
+  if (projects === null) {
+    return (
+      <div className="dash-page">
+        <PageHeader
+          icon={<IconWebhooks size={16} />}
+          title="Webhooks"
+          subtitle="Per-project GitHub webhook URLs and HMAC secrets used to trigger auto-deploys."
+        />
+        <p className="muted">Loading…</p>
+      </div>
+    );
+  }
+  if (projects.length === 0) {
+    return (
+      <div className="dash-page">
+        <PageHeader
+          icon={<IconWebhooks size={16} />}
+          title="Webhooks"
+          subtitle="Per-project GitHub webhook URLs and HMAC secrets used to trigger auto-deploys."
+        />
+        <EmptyState
+          message="No projects yet — create one to see its webhook configuration."
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="dash-page">
+      <PageHeader
+        icon={<IconWebhooks size={16} />}
+        title="Webhooks"
+        subtitle="Per-project GitHub webhook URLs and HMAC secrets used to trigger auto-deploys."
+      />
+      <div className="dash-webhook-list">
+        {projects.map((p) => (
+          <ProjectWebhookCard key={p.id} project={p} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectWebhookCard({ project }: { project: Project }): JSX.Element {
+  const [info, setInfo] = useState<WebhookInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [copied, setCopied] = useState<'url' | 'secret' | null>(null);
+
+  async function load(): Promise<void> {
+    setLoading(true);
+    setError(null);
+    try {
+      const w = await api.getWebhook(project.id);
+      setInfo(w);
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load webhook');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [project.id]);
+
+  async function rotate(): Promise<void> {
+    if (!info) return;
+    const ok = window.confirm(
+      'Rotate the webhook secret? The old secret will stop working immediately — update GitHub with the new one.',
+    );
+    if (!ok) return;
+    setRotating(true);
+    try {
+      const next = await api.rotateWebhook(project.id);
+      setInfo(next);
+    } catch (e) {
+      window.alert(`Failed to rotate: ${(e as Error).message ?? e}`);
+    } finally {
+      setRotating(false);
+    }
+  }
+
+  async function copy(value: string, which: 'url' | 'secret'): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(which);
+      setTimeout(() => setCopied((c) => (c === which ? null : c)), 1400);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  return (
+    <div className="dash-webhook-card">
+      <div className="dash-webhook-card-head">
+        <div>
+          <div className="dash-webhook-card-name">{project.name}</div>
+          <div className="dash-webhook-card-repo">{project.githubRepoFullName}</div>
+        </div>
+        <Link to={`/projects/${project.id}`} className="dash-webhook-card-link">
+          Open project <IconArrowUpRight size={12} />
+        </Link>
+      </div>
+
+      {loading && <p className="muted small">Loading…</p>}
+      {error && <p className="error small">{error}</p>}
+
+      {info && (
+        <>
+          <div className="kv dash-webhook-kv">
+            <div className="kv-label">Payload URL</div>
+            <div className="kv-value">
+              <code>{info.url}</code>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => copy(info.url, 'url')}
+                aria-label="Copy webhook URL"
+                title={copied === 'url' ? 'Copied' : 'Copy URL'}
+              >
+                {copied === 'url' ? <IconCheck size={13} /> : <IconCopy size={13} />}
+              </button>
+            </div>
+            <div className="kv-label">Content type</div>
+            <div className="kv-value">
+              <code>{info.contentType}</code>
+            </div>
+            <div className="kv-label">Secret</div>
+            <div className="kv-value">
+              <code>{info.secret}</code>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => copy(info.secret, 'secret')}
+                aria-label="Copy webhook secret"
+                title={copied === 'secret' ? 'Copied' : 'Copy secret'}
+              >
+                {copied === 'secret' ? <IconCheck size={13} /> : <IconCopy size={13} />}
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={rotate}
+                disabled={rotating}
+                aria-label="Rotate webhook secret"
+                title="Rotate secret"
+              >
+                <IconRefresh size={13} />
+              </button>
+            </div>
+            <div className="kv-label">Events</div>
+            <div className="kv-value">
+              {info.events.map((e) => (
+                <span key={e} className="dash-webhook-tag">
+                  {e}
+                </span>
+              ))}
+            </div>
+          </div>
+          <p className="dash-webhook-hint small muted">
+            Paste the Payload URL and Secret into your GitHub repo's Webhook settings
+            (Settings → Webhooks → Add webhook). Content type must be{' '}
+            <code>application/json</code>.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Observability section
+// =============================================================================
+
+function ObservabilitySection({
+  projects,
+  deployments,
+}: {
+  projects: Project[] | null;
+  deployments: Record<string, Deployment[]>;
+}): JSX.Element {
+  const allDeployments: Deployment[] = useMemo(() => {
+    if (!projects) return [];
+    const out: Deployment[] = [];
+    for (const p of projects) {
+      for (const d of deployments[p.id] ?? []) {
+        out.push(d);
+      }
+    }
+    out.sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
+    return out;
+  }, [projects, deployments]);
+
+  const stats = useMemo(() => {
+    const total = allDeployments.length;
+    let succeeded = 0;
+    let failed = 0;
+    let building = 0;
+    let totalBuildMs = 0;
+    let buildCount = 0;
+    for (const d of allDeployments) {
+      if (d.status === 'running' || d.status === 'stopped') succeeded++;
+      else if (d.status === 'failed') failed++;
+      else if (d.status === 'building' || d.status === 'cloning' || d.status === 'detecting' || d.status === 'queued') building++;
+      if (d.startedAt && d.finishedAt) {
+        const ms = new Date(d.finishedAt).getTime() - new Date(d.startedAt).getTime();
+        if (ms > 0 && ms < 30 * 60 * 1000) {
+          totalBuildMs += ms;
+          buildCount++;
+        }
+      }
+    }
+    const successRate = total > 0 ? Math.round((succeeded / total) * 100) : 0;
+    const avgBuildSec = buildCount > 0 ? Math.round(totalBuildMs / buildCount / 1000) : 0;
+    return { total, succeeded, failed, building, successRate, avgBuildSec };
+  }, [allDeployments]);
+
+  // Build-time trend: bucket last 10 completed by start time, display as bar chart.
+  const recent = useMemo(() => {
+    return allDeployments
+      .filter((d) => d.startedAt && d.finishedAt)
+      .slice(0, 10)
+      .reverse();
+  }, [allDeployments]);
+
+  if (projects === null) {
+    return (
+      <div className="dash-page">
+        <PageHeader
+          icon={<IconActivity size={16} />}
+          title="Observability"
+          subtitle="Real build metrics across all of your projects — no synthetics, no estimates."
+        />
+        <p className="muted">Loading…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dash-page">
+      <PageHeader
+        icon={<IconActivity size={16} />}
+        title="Observability"
+        subtitle="Real build metrics across all of your projects — no synthetics, no estimates."
+      />
+
+      <div className="dash-obs-grid">
+        <ObsStat label="Total deploys" value={String(stats.total)} sub={`across ${projects.length} project${projects.length === 1 ? '' : 's'}`} />
+        <ObsStat label="Success rate" value={`${stats.successRate}%`} sub={`${stats.succeeded} succeeded, ${stats.failed} failed`} />
+        <ObsStat
+          label="Avg build time"
+          value={stats.avgBuildSec > 0 ? `${stats.avgBuildSec}s` : '—'}
+          sub={stats.avgBuildSec > 0 ? 'mean of completed builds' : 'no completed builds yet'}
+        />
+        <ObsStat
+          label="In progress"
+          value={String(stats.building)}
+          sub={stats.building === 0 ? 'idle' : 'active right now'}
+        />
+      </div>
+
+      <div className="dash-section-head" style={{ marginTop: 32 }}>
+        <h2>Last 10 build times</h2>
+        <span className="dash-section-sub">oldest → newest</span>
+      </div>
+
+      {recent.length === 0 ? (
+        <p className="muted small">No completed builds yet — deploy a project to see build-time trends.</p>
+      ) : (
+        <div className="dash-obs-chart">
+          {recent.map((d) => {
+            const ms = new Date(d.finishedAt!).getTime() - new Date(d.startedAt).getTime();
+            const sec = Math.max(1, Math.round(ms / 1000));
+            // Scale: 1px = 1s, capped at 240px so a 4min build fills the bar.
+            const widthPct = Math.min(100, (sec / 240) * 100);
+            return (
+              <div className="dash-obs-bar" key={d.id}>
+                <span className="dash-obs-bar-sha">{d.commitSha.slice(0, 7)}</span>
+                <div className="dash-obs-bar-track">
+                  <div
+                    className={'dash-obs-bar-fill' + (d.status === 'failed' ? ' dash-obs-bar-fill--err' : '')}
+                    style={{ width: `${widthPct}%` }}
+                  />
+                </div>
+                <span className="dash-obs-bar-time">{formatSeconds(sec)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ObsStat({ label, value, sub }: { label: string; value: string; sub: string }): JSX.Element {
+  return (
+    <div className="dash-obs-stat">
+      <div className="dash-obs-stat-label">{label}</div>
+      <div className="dash-obs-stat-value">{value}</div>
+      <div className="dash-obs-stat-sub">{sub}</div>
+    </div>
+  );
+}
+
+function formatSeconds(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
+
+// =============================================================================
+// Notifications section
+// =============================================================================
+
+function NotificationsSection({ user }: { user: User }): JSX.Element {
+  return (
+    <div className="dash-page">
+      <PageHeader
+        icon={<IconBell size={16} />}
+        title="Notifications"
+        subtitle="Choose how you want to hear about deploys."
+      />
+
+      <div className="dash-notif-card">
+        <div className="dash-notif-row">
+          <div>
+            <div className="dash-notif-row-title">Email — {user.email ?? 'no email on file'}</div>
+            <div className="dash-notif-row-sub">Deploy started, succeeded, failed.</div>
+          </div>
+          <span className="dash-badge dash-badge--muted">Coming soon</span>
+        </div>
+        <div className="dash-notif-row">
+          <div>
+            <div className="dash-notif-row-title">Slack</div>
+            <div className="dash-notif-row-sub">Post deploy events to a Slack channel via webhook.</div>
+          </div>
+          <span className="dash-badge dash-badge--muted">Coming soon</span>
+        </div>
+        <div className="dash-notif-row">
+          <div>
+            <div className="dash-notif-row-title">Discord</div>
+            <div className="dash-notif-row-sub">Post deploy events to a Discord channel via webhook.</div>
+          </div>
+          <span className="dash-badge dash-badge--muted">Coming soon</span>
+        </div>
+        <div className="dash-notif-row">
+          <div>
+            <div className="dash-notif-row-title">Webhooks</div>
+            <div className="dash-notif-row-sub">Outgoing HTTP webhooks to your own URL with HMAC signing.</div>
+          </div>
+          <span className="dash-badge dash-badge--muted">Coming soon</span>
+        </div>
+      </div>
+
+      <p className="muted small" style={{ marginTop: 16 }}>
+        These are on the roadmap. For now, watch live deploys in the project dashboard.
+      </p>
+    </div>
+  );
+}
+
+// =============================================================================
+// Settings section
+// =============================================================================
+
+function SettingsSection({ user }: { user: User }): JSX.Element {
+  return (
+    <div className="dash-page">
+      <PageHeader
+        icon={<span className="dash-icon-placeholder">⚙</span>}
+        title="Settings"
+        subtitle="Account and workspace preferences."
+      />
+
+      <div className="dash-settings-card">
+        <h3>Account</h3>
+        <div className="kv">
+          <div className="kv-label">Display name</div>
+          <div className="kv-value">{user.displayName ?? '—'}</div>
+          <div className="kv-label">GitHub</div>
+          <div className="kv-value">
+            <code>@{user.username}</code>
+            <a
+              href={`https://github.com/${user.username}`}
+              target="_blank"
+              rel="noreferrer"
+              className="dash-settings-link"
+            >
+              Open profile <IconArrowUpRight size={12} />
+            </a>
+          </div>
+          <div className="kv-label">Email</div>
+          <div className="kv-value">{user.email ?? <span className="muted">private — GitHub did not share it</span>}</div>
+        </div>
+      </div>
+
+      <div className="dash-settings-card">
+        <h3>Session</h3>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          You are signed in with GitHub. Logging out clears this device's session cookie.
+        </p>
+        <button
+          type="button"
+          className="dash-settings-btn"
+          onClick={async () => {
+            await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+            window.location.href = '/';
+          }}
+        >
+          Log out
+        </button>
+      </div>
+
+      <div className="dash-settings-card dash-settings-card--danger">
+        <h3>Danger zone</h3>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          Account deletion is not yet exposed in the UI. To remove your account and all
+          of its data, email <a className="link" href="mailto:hello@deplox.site">hello@deplox.site</a>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Shared primitives
+// =============================================================================
+
+function PageHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}): JSX.Element {
+  return (
+    <div className="dash-page-header">
+      <div className="dash-page-header-row">
+        {icon && <span className="dash-page-header-icon">{icon}</span>}
+        <h1>{title}</h1>
+      </div>
+      <p className="dash-page-sub">{subtitle}</p>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }): JSX.Element {
+  return (
+    <div className="dash-empty">
+      <p className="muted">{message}</p>
+    </div>
   );
 }
 

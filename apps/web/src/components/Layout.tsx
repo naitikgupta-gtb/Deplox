@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { User } from '@deplox/shared-types';
 import { IconBook, IconCreditCard, IconGithub, IconLogOut } from './Icon';
 import { Logo } from './Logo';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 export function Layout({
   user,
@@ -35,6 +36,7 @@ export function Layout({
               <Link to="/billing" title="Billing">
                 <IconCreditCard size={16} />
               </Link>
+              <ThemeSwitcher />
               <span className="user" title={user.username}>
                 {user.avatarUrl ? (
                   <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
@@ -60,6 +62,7 @@ export function Layout({
               >
                 <IconBook size={16} />
               </a>
+              <ThemeSwitcher />
               <a className="login" href="/auth/github?return_to=/dashboard">
                 <IconGithub size={14} />
                 Log in with GitHub

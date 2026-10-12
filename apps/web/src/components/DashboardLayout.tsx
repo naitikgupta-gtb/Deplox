@@ -30,6 +30,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import type { User } from '@deplox/shared-types';
 import { IconLogOut, IconBook, IconCreditCard, IconPlus } from './Icon';
 import { Logo } from './Logo';
+import { ThemeSwitcher } from './ThemeSwitcher';
 import {
   IconLayoutDashboard,
   IconHome,
@@ -88,6 +89,7 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
           >
             <IconHelpCircle size={16} />
           </a>
+          <ThemeSwitcher />
           <button
             type="button"
             className="dash-avatar"
@@ -191,9 +193,16 @@ function SidebarLink({
     <NavLink
       to={to}
       end={endProp}
-      className={({ isActive }) =>
-        'dash-sidebar-link' + (isActive && !to.includes('#') ? ' dash-sidebar-link--active' : '')
-      }
+      className={({ isActive }) => {
+        // Active only when the path matches. Hash-only links
+        // (/dashboard#webhooks etc.) are highlighted by the DashboardPage
+        // itself via the `dash-section-anchor` class on the heading.
+        const isHashOnly = to.includes('#');
+        if (isHashOnly) {
+          return 'dash-sidebar-link';
+        }
+        return 'dash-sidebar-link' + (isActive ? ' dash-sidebar-link--active' : '');
+      }}
     >
       <span className="dash-sidebar-link-icon">{icon}</span>
       <span>{children}</span>
