@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   IconArrowRight,
+  IconArrowUpRight,
   IconBolt,
   IconCheck,
   IconGithub,
@@ -12,6 +13,44 @@ import {
 } from '../components/Icon';
 import { Logo } from '../components/Logo';
 import { useMeta } from '../lib/use-meta';
+
+/**
+ * Apps currently deployed and serving on deplox — shown on the landing page
+ * as live social proof. Each card links to the real public URL; the green
+ * status dot is a render-only signal (these URLs are real but we don't poll
+ * them on the marketing page to keep the static render fast).
+ */
+const LIVE_APPS: ReadonlyArray<{
+  name: string;
+  host: string;
+  url: string;
+  Icon: () => JSX.Element;
+}> = [
+  {
+    name: 'Event Checkin',
+    host: 'event-checkin-ec.deplox.site',
+    url: 'https://event-checkin-ec.deplox.site',
+    Icon: IconCheckin,
+  },
+  {
+    name: 'GLBITM Attendance',
+    host: 'glbitm-attendance-system-gas.deplox.site',
+    url: 'https://glbitm-attendance-system-gas.deplox.site',
+    Icon: IconUsersSquare,
+  },
+  {
+    name: 'VelvetBrew Coffee',
+    host: 'velvetbrew-coffee-vc.deplox.site',
+    url: 'https://velvetbrew-coffee-vc.deplox.site',
+    Icon: IconCoffee,
+  },
+  {
+    name: 'Ember Coffee',
+    host: 'ember-coffee-ec.deplox.site',
+    url: 'https://ember-coffee-ec.deplox.site',
+    Icon: IconFlame,
+  },
+];
 
 export function LandingPage(): JSX.Element {
   useMeta({
@@ -86,6 +125,37 @@ export function LandingPage(): JSX.Element {
             <div>→ building (12s)</div>
             <div style={{ color: 'var(--color-running)' }}>✓ running on https://next-app.deplox.dev</div>
           </div>
+        </div>
+      </section>
+
+      <section className="live-on">
+        <div className="live-on-label">
+          <span className="live-on-dot" aria-hidden="true" />
+          <span>Live on deplox right now</span>
+        </div>
+        <div className="live-on-grid">
+          {LIVE_APPS.map((app) => (
+            <a
+              key={app.url}
+              className="live-on-card"
+              href={app.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${app.name} — open live site`}
+            >
+              <span className="live-on-icon" aria-hidden="true">
+                <app.Icon />
+              </span>
+              <span className="live-on-body">
+                <span className="live-on-name">{app.name}</span>
+                <span className="live-on-domain">
+                  <span className="live-on-status" aria-hidden="true" />
+                  {app.host}
+                </span>
+              </span>
+              <IconArrowUpRight size={13} className="live-on-arrow" />
+            </a>
+          ))}
         </div>
       </section>
 
@@ -232,5 +302,70 @@ function Feature({
       <h3>{title}</h3>
       <p>{body}</p>
     </div>
+  );
+}
+
+// =============================================================================
+// Per-customer Lucide-style icons (inline — only used on the landing page).
+// Each is a 24×24 stroked SVG that inherits currentColor.
+// =============================================================================
+
+function svgProps() {
+  return {
+    width: 18,
+    height: 18,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+}
+
+function IconCheckin(): JSX.Element {
+  // Ticket with a checkmark — used for event-checkin.
+  return (
+    <svg {...svgProps()}>
+      <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z" />
+      <polyline points="9 12 11 14 15 10" />
+    </svg>
+  );
+}
+
+function IconUsersSquare(): JSX.Element {
+  // Used for the GLBITM attendance system.
+  return (
+    <svg {...svgProps()}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="10" r="2" />
+      <path d="M5 18c.5-2 2-3 4-3s3.5 1 4 3" />
+      <circle cx="16" cy="9" r="1.5" />
+      <path d="M14 18c.3-1.5 1.3-2.5 3-2.5" />
+    </svg>
+  );
+}
+
+function IconCoffee(): JSX.Element {
+  // Mug with handle + steam — VelvetBrew.
+  return (
+    <svg {...svgProps()}>
+      <path d="M17 8h1a3 3 0 0 1 0 6h-1" />
+      <path d="M3 8h14v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z" />
+      <line x1="6" y1="2" x2="6" y2="4" />
+      <line x1="10" y1="2" x2="10" y2="4" />
+      <line x1="14" y1="2" x2="14" y2="4" />
+    </svg>
+  );
+}
+
+function IconFlame(): JSX.Element {
+  // Flame — Ember Coffee.
+  return (
+    <svg {...svgProps()}>
+      <path d="M12 22c4 0 7-3 7-7 0-3-2-5-3-7-1 2-3 3-3 5 0-3-2-5-4-7-1 3-4 5-4 9 0 4 3 7 7 7z" />
+      <path d="M12 18c2 0 3-1 3-3 0-1-1-2-1-3-1 1-2 2-2 3 0 1 0 3 0 3z" />
+    </svg>
   );
 }
