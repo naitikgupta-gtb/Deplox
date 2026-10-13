@@ -64,7 +64,11 @@ if ($LASTEXITCODE -ne 0) { throw "nssm install failed" }
 & nssm set $ServiceName AppThrottleAction      Restart
 
 # Start AFTER the network so localhost ports are usable.
-& nssm set $ServiceName DependOnService        "Docker"
+# (No DependOnService for Docker: the Docker service on Windows is
+#  com.docker.service, but it is often missing or renamed depending on
+#  how Docker Desktop was installed. The watchdog's first 60s loop
+#  already polls `docker info` and starts Docker Desktop if needed, so
+#  a hard dependency would be more brittle than helpful.)
 
 # Service metadata
 & nssm set $ServiceName DisplayName            "Deplox Watchdog (self-heal loop)"
