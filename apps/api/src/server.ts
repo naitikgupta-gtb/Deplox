@@ -24,6 +24,7 @@ import { registerProjectRoutes } from './routes/projects.js';
 import { registerDeploymentRoutes } from './routes/deployments.js';
 import { registerEnvRoutes } from './routes/env.js';
 import { registerCustomDomainRoutes } from './routes/custom-domain.js';
+import { registerSubdomainRoutes } from './routes/subdomain.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { registerBillingRoutes, registerAuthedBillingRoutes } from './routes/billing.js';
 import { registerFoundingRoutes } from './routes/founding.js';
@@ -104,6 +105,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     registerDeploymentRoutes(subApp);
     registerEnvRoutes(subApp);
     registerCustomDomainRoutes(subApp);
+    registerSubdomainRoutes(subApp);
     registerAuthedBillingRoutes(subApp);
     registerGithubReposRoute(subApp);
   });

@@ -58,6 +58,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     defaultBranch: row.defaultBranch,
     framework: (row.framework as Project['framework']) ?? null,
     customDomain: row.customDomain,
+    pickedSubdomain: row.pickedSubdomain,
     customDomainVerified: row.customDomainVerified,
     customDomainVerifiedAt: row.customDomainVerifiedAt
       ? row.customDomainVerifiedAt.toISOString()

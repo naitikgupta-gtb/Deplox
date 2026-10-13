@@ -459,6 +459,7 @@ export async function primeCaddyRoutes(): Promise<void> {
       projectId: projects.id,
       projectName: projects.name,
       customDomain: projects.customDomain,
+      pickedSubdomain: projects.pickedSubdomain,
       hostPort: deployments.hostPort,
       publicUrl: deployments.publicUrl,
       deploymentStatus: deployments.status,
@@ -484,13 +485,16 @@ export async function primeCaddyRoutes(): Promise<void> {
       }
     }
 
-    // 2) Auto-generated deplox.site subdomain (always). Use the short
-    //    `<slug>-<acronym>` form so URLs are easy to share. We don't run
+    // 2) The deplox.site subdomain. If the user picked a custom
+    //    <name>.deplox.site, use it; otherwise fall back to the
+    //    auto-generated <slug>-<acronym>.deplox.site form. We don't run
     //    the DB collision check at startup (it's a hot path); if there
     //    is a collision the user just gets two routes pointing at the
     //    same Caddy listener — first match wins, last-deploy-wins-style.
     //    The orchestrator's collision check kicks in on the next deploy.
-    const subdomain = buildAutoSubdomain(row.projectId, row.projectName);
+    const subdomain = row.pickedSubdomain
+      ? row.pickedSubdomain
+      : buildAutoSubdomain(row.projectId, row.projectName);
     const result = await registerAutoSubdomainRoute(row.projectId, subdomain, row.hostPort);
     if (!result.ok) {
       log.warn({ projectId: row.projectId, subdomain }, 'failed to prime auto-subdomain caddy route');

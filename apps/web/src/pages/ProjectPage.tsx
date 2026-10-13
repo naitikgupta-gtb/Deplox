@@ -15,6 +15,7 @@ import {
   IconCopy,
 } from '../components/Icon';
 import { IconCircleDashed } from '../components/IconNav';
+import { SubdomainPicker } from '../components/SubdomainPicker';
 
 export function ProjectPage(): JSX.Element {
   const { projectId } = useParams<{ projectId: string }>();
@@ -127,6 +128,13 @@ export function ProjectPage(): JSX.Element {
       <WebhookSection
         projectId={project.id}
         autoDeploy={project.autoDeploy}
+        onChange={refreshAll}
+      />
+
+      <SubdomainSection
+        projectId={project.id}
+        pickedSubdomain={project.pickedSubdomain}
+        publicUrl={latest?.publicUrl ?? null}
         onChange={refreshAll}
       />
 
@@ -480,6 +488,42 @@ function WebhookSection({
       </div>
 
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
+    </section>
+  );
+}
+
+function SubdomainSection({
+  projectId,
+  pickedSubdomain,
+  publicUrl,
+  onChange,
+}: {
+  projectId: string;
+  pickedSubdomain: string | null;
+  publicUrl: string | null;
+  onChange: () => Promise<void>;
+}): JSX.Element {
+  return (
+    <section className="section">
+      <h2>deplox.site subdomain</h2>
+      <p className="muted small" style={{ marginBottom: 12 }}>
+        Pick a short, memorable <code>&lt;name&gt;.deplox.site</code> for this
+        project. No DNS setup, no purchase — first-come-first-served. The
+        current public URL is{' '}
+        {publicUrl ? (
+          <a href={publicUrl} target="_blank" rel="noreferrer">
+            {publicUrl.replace(/^https?:\/\//, '')}
+          </a>
+        ) : (
+          <span className="muted">not yet (deploy first)</span>
+        )}
+        .
+      </p>
+      <SubdomainPicker
+        projectId={projectId}
+        current={pickedSubdomain}
+        onChange={onChange}
+      />
     </section>
   );
 }

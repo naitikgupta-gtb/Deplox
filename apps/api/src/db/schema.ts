@@ -95,6 +95,12 @@ export const projects = pgTable(
     githubAccessTokenEncrypted: text('github_access_token_encrypted'),
     defaultBranch: text('default_branch').notNull().default('main'),
     framework: text('framework'), // null until first deployment detects it
+    /**
+     * User-picked subdomain for `<this>.deplox.site`. When set, replaces
+     * the auto-generated `<name>-<short-hash>.deplox.site` form. NULL
+     * means "use the auto-generated default" -- see services/subdomain.ts.
+     */
+    pickedSubdomain: text('picked_subdomain'),
     customDomain: text('custom_domain'),
     /**
      * Whether the user has proven ownership of `customDomain` by adding a
@@ -114,6 +120,7 @@ export const projects = pgTable(
   },
   (t) => ({
     customDomainIdx: uniqueIndex('projects_custom_domain_uniq').on(t.customDomain),
+    pickedSubdomainIdx: uniqueIndex('projects_picked_subdomain_uniq').on(t.pickedSubdomain),
     userIdx: index('projects_user_idx').on(t.userId),
   }),
 );

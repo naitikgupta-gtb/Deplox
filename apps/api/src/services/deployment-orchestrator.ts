@@ -170,7 +170,7 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     }
     appendLog(deploymentId, `[deplox] app is accepting connections on :${hostPort}`);
 
-    const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.id, project.name);
+    const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.pickedSubdomain, project.id, project.name);
 
     await db
       .update(deployments)
@@ -216,10 +216,20 @@ export async function runDeployment(deploymentId: string): Promise<void> {
     // Pick the short slug-acronym form first; if a DB collision (another
     // project already owns that exact subdomain), fall back to the longer
     // suffixed form so URLs stay short in the common case.
-    let autoSubdomain = buildAutoSubdomain(project.id, project.name);
-    const collision = await findSubdomainCollision(autoSubdomain, project.id);
-    if (collision) {
-      autoSubdomain = buildAutoSubdomainWithSuffix(project.id, project.name);
+    //
+    // If the user has claimed a custom subdomain (project.pickedSubdomain),
+    // use that EXACT value -- no auto-generation, no collision check (the
+    // user already passed the availability check at claim time, and they
+    // own the name).
+    let autoSubdomain: string;
+    if (project.pickedSubdomain) {
+      autoSubdomain = project.pickedSubdomain;
+    } else {
+      autoSubdomain = buildAutoSubdomain(project.id, project.name);
+      const collision = await findSubdomainCollision(autoSubdomain, project.id);
+      if (collision) {
+        autoSubdomain = buildAutoSubdomainWithSuffix(project.id, project.name);
+      }
     }
     const autoResult = await registerAutoSubdomainRoute(project.id, autoSubdomain, hostPort);
     if (!autoResult.ok) {
@@ -379,7 +389,7 @@ export async function rollbackDeployment(
     throw err;
   }
 
-  const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.id, project.name);
+  const publicUrl = buildPublicUrl(hostPort, project.customDomain, project.pickedSubdomain, project.id, project.name);
 
   await db
     .update(deployments)
@@ -400,12 +410,18 @@ export async function rollbackDeployment(
 function buildPublicUrl(
   hostPort: number,
   customDomain: string | null,
+  pickedSubdomain: string | null,
   projectId: string,
   projectName: string,
 ): string {
   if (customDomain) {
     // Custom domain takes priority (Caddy issues Let's Encrypt cert on demand).
     return `https://${customDomain}`;
+  }
+  if (pickedSubdomain) {
+    // User-picked deplox.site subdomain (no DNS verification needed since
+    // we own the apex). See services/subdomain.ts.
+    return `https://${pickedSubdomain}`;
   }
   // Auto-generated `*.deplox.site` subdomain is the public URL of last
   // resort. It's always wired to the running container via the auto Caddy

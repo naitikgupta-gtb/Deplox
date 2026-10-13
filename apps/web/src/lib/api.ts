@@ -106,6 +106,30 @@ export type CustomDomainVerifyResponse =
   | { readonly status: 'pending'; readonly domain: string; readonly reason: string }
   | { readonly status: 'no_challenge'; readonly domain: string; readonly reason: string };
 
+/** Response from POST /api/projects/:id/subdomain/check. */
+export interface SubdomainAvailabilityResponse {
+  readonly subdomain: string;
+  readonly available: boolean;
+  /** If !available: 'taken' (another project), 'reserved', 'invalid', or a validation reason. */
+  readonly reason: string;
+  /** If !available: a free-form alternative we can suggest. May itself be taken; the UI should re-check. */
+  readonly suggestion: string | null;
+}
+
+/** Response from POST /api/projects/:id/subdomain/claim. */
+export interface SubdomainClaimResponse {
+  readonly subdomain: string;
+  readonly fullHostname: string;
+  readonly wasAlreadyYours: boolean;
+  readonly caddyRouteActive: boolean;
+}
+
+/** Response from DELETE /api/projects/:id/subdomain. */
+export interface SubdomainReleaseResponse {
+  readonly hadSubdomain: boolean;
+  readonly previousSubdomain: string | null;
+}
+
 export const api = {
   me: () => request<User>('/api/me'),
   listProjects: () => request<Project[]>('/api/projects'),
@@ -138,6 +162,23 @@ export const api = {
     ),
   removeCustomDomain: (projectId: string) =>
     request<void>(`/api/projects/${projectId}/custom-domain`, { method: 'DELETE' }),
+
+  // Picked-subdomain flow. See services/subdomain.ts.
+  checkSubdomain: (projectId: string, subdomain: string) =>
+    request<SubdomainAvailabilityResponse>(
+      `/api/projects/${projectId}/subdomain/check`,
+      { method: 'POST', body: JSON.stringify({ subdomain }) },
+    ),
+  claimSubdomain: (projectId: string, subdomain: string) =>
+    request<SubdomainClaimResponse>(
+      `/api/projects/${projectId}/subdomain/claim`,
+      { method: 'POST', body: JSON.stringify({ subdomain }) },
+    ),
+  releaseSubdomain: (projectId: string) =>
+    request<SubdomainReleaseResponse>(
+      `/api/projects/${projectId}/subdomain`,
+      { method: 'DELETE' },
+    ),
   listDeployments: (projectId: string) =>
     request<Deployment[]>(`/api/projects/${projectId}/deployments`),
   createDeployment: (projectId: string, input: CreateDeploymentInput = {}) =>

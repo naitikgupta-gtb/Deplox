@@ -74,6 +74,12 @@ export interface Project {
   readonly framework: Framework | null;
   readonly customDomain: string | null;
   /**
+   * User-picked `<name>.deplox.site` subdomain. When set, replaces the
+   * auto-generated `<name>-<short-hash>.deplox.site` form. NULL means
+   * "use the auto-generated default".
+   */
+  readonly pickedSubdomain: string | null;
+  /**
    * Whether the user has proven ownership of `customDomain` by adding a
    * DNS TXT record at `_deplox-verify.<customDomain>`. False until the
    * TXT record is in place and the user clicks "Verify". When false, the
