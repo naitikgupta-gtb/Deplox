@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Show status of the NSSM-managed DEPLOX services.
   No admin required.

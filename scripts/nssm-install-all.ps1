@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Install BOTH NSSM services for DEPLOX (DeploxDev + DeploxWatchdog).
 
@@ -15,7 +15,7 @@ $Repo = 'C:\Users\naiti\Desktop\MINIMAX\MiniMax_Projects\deplox'
 # Check elevation
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    throw "This script must be run as Administrator. Right-click PowerShell → 'Run as administrator', then re-run."
+    throw "This script must be run as Administrator. Right-click PowerShell, choose 'Run as administrator', then re-run."
 }
 
 Write-Host "==== installing DeploxDev ===="
@@ -31,4 +31,4 @@ Write-Host ""
 Write-Host "==== status ===="
 Get-Service DeploxDev, DeploxWatchdog | Format-Table Name, Status, StartType -AutoSize
 Write-Host ""
-Write-Host "Done. Test by rebooting the box — both services should come back automatically."
+Write-Host "Done. Test by rebooting the box -- both services should come back automatically."

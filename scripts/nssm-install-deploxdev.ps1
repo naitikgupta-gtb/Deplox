@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Install DeploxDev as a proper Windows service via NSSM.
 

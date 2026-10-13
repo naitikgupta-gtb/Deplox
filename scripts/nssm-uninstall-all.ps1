@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Uninstall both NSSM services (DeploxDev + DeploxWatchdog).
   Stops each service, then removes it from the SCM. Idempotent.
@@ -17,7 +17,7 @@ $nssm = (Get-Command nssm.exe -ErrorAction Stop).Source
 foreach ($svc in $Services) {
     $existing = Get-Service -Name $svc -ErrorAction SilentlyContinue
     if (-not $existing) {
-        Write-Host "[$svc] not installed — skipping"
+        Write-Host "[$svc] not installed -- skipping"
         continue
     }
     Write-Host "[$svc] stopping"

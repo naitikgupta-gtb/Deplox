@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Install DeploxWatchdog as a proper Windows service via NSSM.
 
