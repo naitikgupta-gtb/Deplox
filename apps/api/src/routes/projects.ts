@@ -41,6 +41,7 @@ const UpdateProjectSchema = z.object({
     .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/i, 'must be a valid domain')
     .nullable()
     .optional(),
+  publiclyListed: z.boolean().optional(),
 });
 
 /** Generates a 32-byte webhook secret, returned as hex (64 chars). */
@@ -59,6 +60,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     framework: (row.framework as Project['framework']) ?? null,
     customDomain: row.customDomain,
     pickedSubdomain: row.pickedSubdomain,
+    publiclyListed: row.publiclyListed,
     customDomainVerified: row.customDomainVerified,
     customDomainVerifiedAt: row.customDomainVerifiedAt
       ? row.customDomainVerifiedAt.toISOString()
@@ -212,6 +214,9 @@ export function registerProjectRoutes(app: FastifyInstance): void {
 
     const update: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.autoDeploy !== undefined) update.autoDeploy = parsed.data.autoDeploy;
+    if (parsed.data.publiclyListed !== undefined) {
+      update.publiclyListed = parsed.data.publiclyListed;
+    }
 
     // Custom-domain handling:
     //   null  -> clear everything, unregister route

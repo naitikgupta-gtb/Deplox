@@ -28,7 +28,7 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import type { User } from '@deplox/shared-types';
-import { IconLogOut, IconBook, IconCreditCard, IconPlus, IconArrowUpRight } from './Icon';
+import { IconLogOut, IconBook, IconCreditCard, IconPlus } from './Icon';
 import { Logo } from './Logo';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { DeploxMarkGlow } from './DeploxMarkGlow';
@@ -44,18 +44,6 @@ import {
   IconGitBranch,
   IconCircleDashed,
 } from './IconNav';
-
-/**
- * Customer apps currently deployed and live on deplox — shown in the
- * dashboard sidebar's "Powering" row as social proof for the owner. Kept
- * in sync with the landing-page strip so the numbers don't lie.
- */
-const DASHBOARD_LIVE_APPS: ReadonlyArray<{ short: string; host: string; url: string }> = [
-  { short: 'event-checkin', host: 'event-checkin-ec.deplox.site', url: 'https://event-checkin-ec.deplox.site' },
-  { short: 'GLBITM attendance', host: 'glbitm-attendance-system-gas.deplox.site', url: 'https://glbitm-attendance-system-gas.deplox.site' },
-  { short: 'VelvetBrew', host: 'velvetbrew-coffee-vc.deplox.site', url: 'https://velvetbrew-coffee-vc.deplox.site' },
-  { short: 'Ember Coffee', host: 'ember-coffee-ec.deplox.site', url: 'https://ember-coffee-ec.deplox.site' },
-];
 
 interface DashboardLayoutProps {
   user: User;
@@ -171,27 +159,6 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
               Changelog
             </SidebarLink>
           </SidebarSection>
-
-          <div className="dash-sidebar-customers">
-            <div className="dash-sidebar-customers-label">Powering</div>
-            <ul className="dash-sidebar-customers-list">
-              {DASHBOARD_LIVE_APPS.map((app) => (
-                <li key={app.url}>
-                  <a
-                    href={app.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="dash-sidebar-customer"
-                    title={app.host}
-                  >
-                    <span className="dash-sidebar-customer-status" aria-hidden="true" />
-                    <span className="dash-sidebar-customer-name">{app.short}</span>
-                    <IconArrowUpRight size={11} className="dash-sidebar-customer-arrow" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
 
           <div className="dash-sidebar-footer">
             <SidebarLink to="/about" icon={<IconHome size={15} />}>

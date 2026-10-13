@@ -101,6 +101,13 @@ export const projects = pgTable(
      * means "use the auto-generated default" -- see services/subdomain.ts.
      */
     pickedSubdomain: text('picked_subdomain'),
+    /**
+     * Whether the project is opted into the public "Live on deplox"
+     * showcase on the marketing landing page. Default false -- the owner
+     * must explicitly enable it. We never auto-include projects; showing
+     * someone's app publicly is a privacy decision the user must make.
+     */
+    publiclyListed: boolean('publicly_listed').notNull().default(false),
     customDomain: text('custom_domain'),
     /**
      * Whether the user has proven ownership of `customDomain` by adding a

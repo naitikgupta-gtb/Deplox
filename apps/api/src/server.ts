@@ -18,6 +18,7 @@ import { loadConfig } from '@deplox/shared-config';
 import { getLogger } from '@deplox/shared-logger';
 import { attachUser, requireAuth } from './auth/middleware.js';
 import { registerAuthRoutes } from './auth/github.js';
+import { registerPublicShowcaseRoute } from './routes/public-showcase.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerProjectRoutes } from './routes/projects.js';
@@ -94,6 +95,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerAuthRoutes(app);
   registerWebhookRoutes(app);
   registerFoundingRoutes(app);
+  registerPublicShowcaseRoute(app);
   registerBillingRoutes(app); // webhook is public; the rest are authed
 
   // ---- Authenticated routes --------------------------------------------

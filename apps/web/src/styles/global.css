@@ -1888,6 +1888,13 @@ button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
   flex-shrink: 0;
   transition: color 120ms ease, transform 120ms ease;
 }
+.landing .live-on-empty {
+  padding: 28px 18px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  max-width: 560px;
+}
 .landing .live-on-card:hover .live-on-arrow {
   color: var(--color-fg);
   transform: translate(1px, -1px);
@@ -2641,76 +2648,13 @@ button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 .dash-sidebar-link--button { color: var(--color-fg-faint); }
 
-/* Sidebar "Powering" block — lists the deployed customer apps as live
-   social proof. Sits between the nav and the footer (About / Log out). */
-.dash-sidebar-customers {
-  margin-top: auto;
-  padding: 12px 0 8px;
-  border-top: 1px solid var(--color-border);
-}
-.dash-sidebar-customers-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-fg-faint);
-  font-weight: 600;
-  padding: 0 10px 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dash-sidebar-customers-label::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--color-border);
-}
-.dash-sidebar-customers-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.dash-sidebar-customer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border-radius: var(--radius);
-  color: var(--color-fg-muted);
-  font-size: 12px;
-  text-decoration: none;
-  transition: background 100ms ease, color 100ms ease;
-}
-.dash-sidebar-customer:hover {
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
-}
-.dash-sidebar-customer-status {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-running);
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px var(--color-success-bg);
-}
-.dash-sidebar-customer-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dash-sidebar-customer-arrow {
-  color: var(--color-fg-faint);
-  flex-shrink: 0;
-  transition: color 100ms ease, transform 100ms ease;
-}
-.dash-sidebar-customer:hover .dash-sidebar-customer-arrow {
-  color: var(--color-fg);
-  transform: translate(1px, -1px);
-}
+/* Note: a previous version of the dashboard sidebar had a "Powering"
+   block here that hardcoded 4 customer projects and showed them to every
+   logged-in user. That was a privacy leak: any other GitHub user who
+   logged in saw the deplox owner's projects in their own sidebar. The
+   block has been removed from the JSX. The selectors below remain as
+   stubs in case we want to bring it back later, gated on the user being
+   the deplox owner. */
 
 .dash-main {
   flex: 1;

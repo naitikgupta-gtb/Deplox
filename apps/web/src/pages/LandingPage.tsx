@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   IconArrowRight,
   IconArrowUpRight,
@@ -15,42 +16,38 @@ import { Logo } from '../components/Logo';
 import { useMeta } from '../lib/use-meta';
 
 /**
- * Apps currently deployed and serving on deplox — shown on the landing page
- * as live social proof. Each card links to the real public URL; the green
- * status dot is a render-only signal (these URLs are real but we don't poll
- * them on the marketing page to keep the static render fast).
+ * Shape returned by GET /api/public/showcase-projects. Only projects whose
+ * owner has explicitly opted in (publiclyListed = true) are returned, and
+ * only those with a currently-running deplox.site deployment.
  */
-const LIVE_APPS: ReadonlyArray<{
+interface ShowcaseApp {
   name: string;
   host: string;
   url: string;
-  Icon: () => JSX.Element;
-}> = [
-  {
-    name: 'Event Checkin',
-    host: 'event-checkin-ec.deplox.site',
-    url: 'https://event-checkin-ec.deplox.site',
-    Icon: IconCheckin,
-  },
-  {
-    name: 'GLBITM Attendance',
-    host: 'glbitm-attendance-system-gas.deplox.site',
-    url: 'https://glbitm-attendance-system-gas.deplox.site',
-    Icon: IconUsersSquare,
-  },
-  {
-    name: 'VelvetBrew Coffee',
-    host: 'velvetbrew-coffee-vc.deplox.site',
-    url: 'https://velvetbrew-coffee-vc.deplox.site',
-    Icon: IconCoffee,
-  },
-  {
-    name: 'Ember Coffee',
-    host: 'ember-coffee-ec.deplox.site',
-    url: 'https://ember-coffee-ec.deplox.site',
-    Icon: IconFlame,
-  },
-];
+  framework: string | null;
+}
+
+/**
+ * Map a deplox framework string to a Lucide-style icon for the live
+ * customer card. Falls back to a generic package icon if the framework
+ * isn't in our table.
+ */
+function frameworkIcon(framework: string | null): () => JSX.Element {
+  switch (framework?.toLowerCase()) {
+    case 'nextjs':
+    case 'next.js':
+      return IconCoffee; // mock map; tweak per your framework taxonomy
+    case 'react':
+      return IconCheckin;
+    case 'node':
+    case 'express':
+      return IconUsersSquare;
+    case 'static':
+      return IconFlame;
+    default:
+      return IconFlame;
+  }
+}
 
 export function LandingPage(): JSX.Element {
   useMeta({
@@ -59,6 +56,31 @@ export function LandingPage(): JSX.Element {
       'DEPLOX clones, builds, and serves your GitHub repo on a public URL with HTTPS, encrypted secrets, and instant rollback. No DevOps, no nginx archaeology.',
     path: '/',
   });
+
+  // Fetch the public "Live on deplox" showcase list. Empty until the
+  // owner opts a project in (publiclyListed = true).
+  const [showcase, setShowcase] = useState<ShowcaseApp[]>([]);
+  const [showcaseLoaded, setShowcaseLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/public/showcase-projects');
+        if (!res.ok) return;
+        const data = (await res.json()) as { apps: ShowcaseApp[] };
+        if (!cancelled) {
+          setShowcase(data.apps ?? []);
+          setShowcaseLoaded(true);
+        }
+      } catch {
+        if (!cancelled) setShowcaseLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="landing">
       <div className="founding-strip">
@@ -133,30 +155,40 @@ export function LandingPage(): JSX.Element {
           <span className="live-on-dot" aria-hidden="true" />
           <span>Live on deplox right now</span>
         </div>
-        <div className="live-on-grid">
-          {LIVE_APPS.map((app) => (
-            <a
-              key={app.url}
-              className="live-on-card"
-              href={app.url}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`${app.name} — open live site`}
-            >
-              <span className="live-on-icon" aria-hidden="true">
-                <app.Icon />
-              </span>
-              <span className="live-on-body">
-                <span className="live-on-name">{app.name}</span>
-                <span className="live-on-domain">
-                  <span className="live-on-status" aria-hidden="true" />
-                  {app.host}
-                </span>
-              </span>
-              <IconArrowUpRight size={13} className="live-on-arrow" />
-            </a>
-          ))}
-        </div>
+        {showcaseLoaded && showcase.length === 0 ? (
+          <p className="live-on-empty muted small">
+            No public projects yet. Deplox is a self-hosted deploy platform —
+            projects stay private by default.
+          </p>
+        ) : (
+          <div className="live-on-grid">
+            {showcase.map((app) => {
+              const Icon = frameworkIcon(app.framework);
+              return (
+                <a
+                  key={app.url}
+                  className="live-on-card"
+                  href={app.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${app.name} — open live site`}
+                >
+                  <span className="live-on-icon" aria-hidden="true">
+                    <Icon />
+                  </span>
+                  <span className="live-on-body">
+                    <span className="live-on-name">{app.name}</span>
+                    <span className="live-on-domain">
+                      <span className="live-on-status" aria-hidden="true" />
+                      {app.host}
+                    </span>
+                  </span>
+                  <IconArrowUpRight size={13} className="live-on-arrow" />
+                </a>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="trusted">

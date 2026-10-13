@@ -53,6 +53,7 @@ export interface WebhookInfo {
 export interface UpdateProjectInput {
   readonly autoDeploy?: boolean;
   readonly customDomain?: string | null;
+  readonly publiclyListed?: boolean;
 }
 
 export interface BillingInfo {

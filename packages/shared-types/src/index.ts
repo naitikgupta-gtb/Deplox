@@ -80,6 +80,13 @@ export interface Project {
    */
   readonly pickedSubdomain: string | null;
   /**
+   * Whether the project is opted into the public "Live on deplox"
+   * showcase on the marketing landing page. Only the project owner can
+   * change this; the default is false. Privacy decision -- never
+   * auto-enabled.
+   */
+  readonly publiclyListed: boolean;
+  /**
    * Whether the user has proven ownership of `customDomain` by adding a
    * DNS TXT record at `_deplox-verify.<customDomain>`. False until the
    * TXT record is in place and the user clicks "Verify". When false, the

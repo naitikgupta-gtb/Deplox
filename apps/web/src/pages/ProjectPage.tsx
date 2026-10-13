@@ -138,6 +138,13 @@ export function ProjectPage(): JSX.Element {
         onChange={refreshAll}
       />
 
+      <PublicListingSection
+        projectId={project.id}
+        publiclyListed={project.publiclyListed}
+        publicUrl={latest?.publicUrl ?? null}
+        onChange={refreshAll}
+      />
+
       <CustomDomainSection
         projectId={project.id}
         customDomain={project.customDomain}
@@ -486,6 +493,73 @@ function WebhookSection({
           <code>{info.events.join(', ')}</code>
         </div>
       </div>
+
+      {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
+    </section>
+  );
+}
+
+function PublicListingSection({
+  projectId,
+  publiclyListed,
+  publicUrl,
+  onChange,
+}: {
+  projectId: string;
+  publiclyListed: boolean;
+  publicUrl: string | null;
+  onChange: () => Promise<void>;
+}): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle(next: boolean): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateProject(projectId, { publiclyListed: next });
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="section">
+      <h2>Public showcase</h2>
+      <p className="muted small" style={{ marginBottom: 12 }}>
+        When enabled, this project appears in the <code>Live on deplox</code>{' '}
+        strip on the public marketing page so anyone visiting{' '}
+        <code>deplox.site</code> can see it. Off by default — your projects are
+        private until you opt in.
+      </p>
+
+      <div className="webhook-row">
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={publiclyListed}
+            disabled={busy}
+            onChange={(e) => toggle(e.target.checked)}
+          />
+          <span className="toggle-track">
+            <span className="toggle-thumb" />
+          </span>
+          <span className="toggle-label">
+            <IconZap size={13} />
+            Show on the public landing page
+          </span>
+        </label>
+      </div>
+
+      {publiclyListed && (
+        <p className="small muted" style={{ marginTop: 12 }}>
+          Will appear as:{' '}
+          <strong>{publicUrl ? publicUrl.replace(/^https?:\/\//, '') : '(deploy first)'}</strong>
+        </p>
+      )}
 
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
     </section>
