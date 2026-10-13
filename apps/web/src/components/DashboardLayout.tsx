@@ -1,44 +1,59 @@
 /**
  * DashboardLayout — top bar + left sidebar + main content, used for all
- * signed-in dashboard routes. Mirrors the Render.com dashboard structure:
+ * signed-in dashboard routes.
  *
- *   ┌────────────────────────────────────────────────────────────────┐
- *   │  deplox  Projects          [search] [+ New]  ?   ◐ (avatar) │  topbar
- *   ├──────────┬─────────────────────────────────────────────────────┤
- *   │ PROJECTS │                                                     │
- *   │  Overv.. │              {children}                              │
- *   │  New     │                                                     │
- *   │          │                                                     │
- *   │ INTEGR.. │                                                     │
- *   │  Webh..  │                                                     │
- *   │  Observ. │                                                     │
- *   │  Notif.. │                                                     │
- *   │          │                                                     │
- *   │ WORKSP.. │                                                     │
- *   │  Bill..  │                                                     │
- *   │  Settings│                                                     │
- *   │  Docs    │                                                     │
- *   │  Status  │                                                     │
- *   └──────────┴─────────────────────────────────────────────────────┘
+ * Layout (Vercel-inspired, monochromatic, no pill buttons):
+ *
+ *   ┌────────────────────────────────────────────────────────────────────┐
+ *   │ ◆ Projects       Overview      [search ⌘K]   🔔 ✉  ◐  ⓘ ◐ ☾  ⓘ │  topbar
+ *   ├──────────┬─────────────────────────────────────────────────────────┤
+ *   │ deplox   │                                                         │
+ *   │ deploy...│                                                         │
+ *   │          │              {children}                                  │
+ *   │ ──────   │                                                         │
+ *   │ PROJECTS │                                                         │
+ *   │ Overview │                                                         │
+ *   │ New      │                                                         │
+ *   │ Activity │                                                         │
+ *   │ ──────   │                                                         │
+ *   │ INTEG... │                                                         │
+ *   │ ...      │                                                         │
+ *   │ ──────   │                                                         │
+ *   │ WORK...  │                                                         │
+ *   │ ...      │                                                         │
+ *   │          │                                                         │
+ *   │          │                                                         │
+ *   │ [ⓘ user] │  <- Vercel-style account panel pinned to the bottom    │
+ *   └──────────┴─────────────────────────────────────────────────────────┘
  *
  * Public pages (Landing, Pricing, Docs, About, Changelog, Status) keep
  * the simpler `Layout` component (centered top nav + main + footer).
  */
 
 import type { ReactNode } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { User } from '@deplox/shared-types';
-import { IconLogOut, IconBook, IconCreditCard, IconPlus } from './Icon';
+import {
+  IconLogOut,
+  IconBook,
+  IconCreditCard,
+  IconPlus,
+  IconBell,
+  IconMail,
+  IconCommand,
+} from './Icon';
 import { Logo } from './Logo';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { DeploxMarkGlow } from './DeploxMarkGlow';
+import { UserMenu } from './UserMenu';
+import { UserPanel } from './UserPanel';
 import {
   IconLayoutDashboard,
   IconHome,
   IconSettings,
   IconActivity,
   IconWebhooks,
-  IconBell,
+  IconBell as IconBellNav,
   IconSearch,
   IconHelpCircle,
   IconGitBranch,
@@ -50,8 +65,55 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.Element {
+/**
+ * Derive a friendly page title and breadcrumb from the current URL.
+ * The title is shown centered in the topbar (Vercel style). The crumb
+ * appears to the LEFT of the brand (e.g. "Projects" for sub-pages).
+ *
+ * Sub-page-specific titles (the project name on /projects/:id) are set
+ * via the `data-page-title` attribute that the page itself writes to
+ * <html>, so this function is the fallback for everything else.
+ */
+function derivePageInfo(pathname: string, hash: string): { title: string; crumb: string | null } {
+  const docTitle = (typeof document !== 'undefined' ? document.documentElement.getAttribute('data-page-title') : null) || '';
+  if (pathname.startsWith('/projects/') && docTitle) {
+    return { title: docTitle, crumb: 'Projects' };
+  }
+  if (pathname === '/dashboard') {
+    if (hash === '#activity') return { title: 'Activity', crumb: null };
+    if (hash === '#webhooks') return { title: 'Webhooks', crumb: 'Integrations' };
+    if (hash === '#observability') return { title: 'Observability', crumb: 'Integrations' };
+    if (hash === '#notifications') return { title: 'Notifications', crumb: 'Integrations' };
+    if (hash === '#settings') return { title: 'Settings', crumb: 'Workspace' };
+    return { title: 'Overview', crumb: null };
+  }
+  if (pathname === '/new') return { title: 'New project', crumb: null };
+  if (pathname === '/billing') return { title: 'Billing', crumb: 'Workspace' };
+  if (pathname === '/docs') return { title: 'Docs', crumb: null };
+  if (pathname === '/status') return { title: 'Status', crumb: null };
+  if (pathname === '/changelog') return { title: 'Changelog', crumb: null };
+  if (pathname === '/about') return { title: 'About', crumb: null };
+  if (pathname === '/founding') return { title: 'Founding', crumb: null };
+  if (pathname === '/pricing') return { title: 'Pricing', crumb: null };
+  return { title: 'Overview', crumb: null };
+}
+
+export function DashboardLayout({
+  user,
+  children,
+}: DashboardLayoutProps): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
+  const { title: pageTitle, crumb: pageCrumb } = derivePageInfo(location.pathname, location.hash);
+
+  function setSearch(value: string): void {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set('q', value);
+    else next.delete('q');
+    setSearchParams(next, { replace: true });
+  }
 
   async function logout(): Promise<void> {
     await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
@@ -70,16 +132,39 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
           <NavLink to="/dashboard" className="dash-topbar-link" end>
             Projects
           </NavLink>
+          {pageCrumb && (
+            <span className="dash-topbar-crumb-sep" aria-hidden="true">
+              /
+            </span>
+          )}
+          {pageCrumb && <span className="dash-topbar-crumb">{pageCrumb}</span>}
         </div>
-        <div className="dash-topbar-right">
-          <button type="button" className="dash-search" aria-label="Search">
+
+        <div className="dash-topbar-center">
+          {pageTitle && <h1 className="dash-topbar-title">{pageTitle}</h1>}
+          <div className="dash-search" role="search">
             <IconSearch size={14} />
-            <span>Search</span>
-            <kbd>⌘K</kbd>
-          </button>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects"
+              aria-label="Search projects"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+            <kbd>
+              <IconCommand size={10} /> K
+            </kbd>
+          </div>
+        </div>
+
+        <div className="dash-topbar-right">
           <Link to="/new" className="dash-new-btn">
             <IconPlus size={13} /> New
           </Link>
+
           <a
             href="https://github.com/deploxhq/deplox"
             target="_blank"
@@ -90,20 +175,32 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
           >
             <IconHelpCircle size={16} />
           </a>
-          <ThemeSwitcher />
+
           <button
             type="button"
-            className="dash-avatar"
-            onClick={logout}
-            title={`${user.displayName ?? user.username} — click to log out`}
-            aria-label="User menu"
+            className="dash-icon-btn"
+            aria-label="Notifications"
+            title="Notifications"
           >
-            {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
-            ) : (
-              <span>{(user.displayName ?? user.username).slice(0, 1).toUpperCase()}</span>
-            )}
+            <IconBell size={16} />
           </button>
+
+          <a
+            href="/docs"
+            className="dash-icon-btn"
+            aria-label="Docs"
+            title="Mail & docs"
+          >
+            <IconMail size={16} />
+          </a>
+
+          <ThemeSwitcher />
+
+          <UserMenu
+            user={user}
+            profileHref={user.username ? `https://github.com/${user.username}` : undefined}
+            onLogout={logout}
+          />
         </div>
       </header>
 
@@ -137,7 +234,7 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
             <SidebarLink to="/dashboard#observability" icon={<IconActivity size={15} />}>
               Observability
             </SidebarLink>
-            <SidebarLink to="/dashboard#notifications" icon={<IconBell size={15} />}>
+            <SidebarLink to="/dashboard#notifications" icon={<IconBellNav size={15} />}>
               Notifications
             </SidebarLink>
           </SidebarSection>
@@ -158,17 +255,15 @@ export function DashboardLayout({ user, children }: DashboardLayoutProps): JSX.E
             <SidebarLink to="/changelog" icon={<IconGitBranch size={15} />}>
               Changelog
             </SidebarLink>
-          </SidebarSection>
-
-          <div className="dash-sidebar-footer">
             <SidebarLink to="/about" icon={<IconHome size={15} />}>
               About
             </SidebarLink>
-            <button type="button" className="dash-sidebar-link dash-sidebar-link--button" onClick={logout}>
-              <IconLogOut size={15} />
-              <span>Log out</span>
-            </button>
-          </div>
+          </SidebarSection>
+
+          {/* Spacer pushes the user panel to the bottom of the sidebar. */}
+          <div className="dash-sidebar-spacer" />
+
+          <UserPanel user={user} onLogout={logout} />
         </aside>
 
         <main className="dash-main">{children}</main>
@@ -218,3 +313,5 @@ function SidebarLink({
     </NavLink>
   );
 }
+
+

@@ -13,6 +13,7 @@ import { users } from '../db/schema.js';
 import { loadConfig } from '@deplox/shared-config';
 import { exchangeOAuthCode } from '../services/github.js';
 import { encrypt } from '../services/encryption.js';
+import { sendWelcomeEmail } from '../services/email.js';
 import {
   createSession,
   setSessionCookie,
@@ -120,6 +121,16 @@ export function registerAuthRoutes(app: FastifyInstance): void {
           })
           .returning({ id: users.id });
         userId = inserted[0]!.id;
+
+        // First-time signup. Send a one-shot welcome email (informational
+        // only, no verification gate) so the user has a paper trail. We
+        // call the fire-and-forget helper so this doesn't slow the OAuth
+        // redirect; failures are logged inside the email service.
+        sendWelcomeEmail({
+          email: profile.email,
+          displayName: profile.displayName,
+          username: profile.username,
+        });
       }
 
       const sid = await createSession(userId);

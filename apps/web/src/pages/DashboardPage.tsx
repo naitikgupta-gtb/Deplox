@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Deployment, Project, User } from '@deplox/shared-types';
 import { api, type WebhookInfo } from '../lib/api';
 import {
@@ -12,6 +12,9 @@ import {
   IconArrowUpRight,
   IconCopy,
   IconRefresh,
+  IconChart,
+  IconTrendingUp,
+  IconShieldCheck,
 } from '../components/Icon';
 import { IconCircleDashed, IconActivity, IconWebhooks, IconBell } from '../components/IconNav';
 
@@ -40,11 +43,25 @@ function sectionFromHash(hash: string): Section {
 export function DashboardPage({ user }: { user: User }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const search = searchParams.get('q') ?? '';
   const section = sectionFromHash(location.hash);
 
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [deployments, setDeployments] = useState<Record<string, Deployment[]>>({});
   const [removing, setRemoving] = useState<string | null>(null);
+
+  const filteredProjects = useMemo(() => {
+    if (!projects) return null;
+    if (!search.trim()) return projects;
+    const q = search.trim().toLowerCase();
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.githubRepoFullName.toLowerCase().includes(q) ||
+        (p.customDomain ?? '').toLowerCase().includes(q),
+    );
+  }, [projects, search]);
 
   const refresh = () => {
     api
@@ -148,11 +165,19 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
         <span className="dash-page-sub">Hi {user.displayName ?? user.username} — here's what you've deployed.</span>
       </div>
 
+      <OverviewUsageStats projects={projects} deployments={deployments} />
+
+      <RecentPreviews projects={projects} deployments={deployments} />
+
+      <AlertsCard />
+
       <div className="dash-section-head">
         <h2>Projects</h2>
         {total > 0 && (
           <span className="dash-section-sub">
-            {total} / {FREE_PROJECT_LIMIT} on Free
+            {search && filteredProjects
+              ? `${filteredProjects.length} of ${total}`
+              : `${total} / ${FREE_PROJECT_LIMIT} on Free`}
           </span>
         )}
       </div>
@@ -173,9 +198,20 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
             </span>
           </button>
         </div>
+      ) : filteredProjects && filteredProjects.length === 0 ? (
+        <div className="dash-empty-search">
+          <p className="muted">No projects match <code>{search}</code>.</p>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setSearchParams((p) => { p.delete('q'); return p; }, { replace: true })}
+          >
+            Clear search
+          </button>
+        </div>
       ) : (
         <div className="dash-project-grid">
-          {projects.map((p) => {
+          {(filteredProjects ?? projects).map((p) => {
             const latest = deployments[p.id]?.[0];
             const isRemoving = removing === p.id;
             return (
@@ -796,4 +832,213 @@ function timeAgo(iso: string): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   return `${d}d ago`;
+}
+
+// =============================================================================
+// Overview top-row: Usage stats (Vercel-style), Alerts, Recent Previews
+// =============================================================================
+
+function OverviewUsageStats({
+  projects,
+  deployments,
+}: {
+  projects: Project[] | null;
+  deployments: Record<string, Deployment[]>;
+}): JSX.Element {
+  const stats = useMemo(() => {
+    const all: Deployment[] = [];
+    for (const list of Object.values(deployments)) all.push(...list);
+    const total = all.length;
+    let succeeded = 0;
+    let failed = 0;
+    let building = 0;
+    let totalBuildMs = 0;
+    let buildCount = 0;
+    for (const d of all) {
+      if (d.status === 'running' || d.status === 'stopped') succeeded++;
+      else if (d.status === 'failed') failed++;
+      else if (
+        d.status === 'building' ||
+        d.status === 'cloning' ||
+        d.status === 'detecting' ||
+        d.status === 'starting' ||
+        d.status === 'queued'
+      ) {
+        building++;
+      }
+      if (d.startedAt && d.finishedAt) {
+        const ms = new Date(d.finishedAt).getTime() - new Date(d.startedAt).getTime();
+        if (ms > 0 && ms < 30 * 60 * 1000) {
+          totalBuildMs += ms;
+          buildCount++;
+        }
+      }
+    }
+    const successRate = total > 0 ? Math.round((succeeded / total) * 100) : 0;
+    const avgBuildSec = buildCount > 0 ? Math.round(totalBuildMs / buildCount / 1000) : 0;
+    return { total, succeeded, failed, building, successRate, avgBuildSec };
+  }, [deployments]);
+
+  const projectCount = projects?.length ?? 0;
+  const liveCount = (projects ?? []).filter(
+    (p) => deployments[p.id]?.[0]?.status === 'running',
+  ).length;
+
+  return (
+    <div className="dash-overview-row">
+      <UsageCard
+        icon={<IconTrendingUp size={14} />}
+        label="Deploys"
+        value={String(stats.total)}
+        sub={`${stats.succeeded} succeeded, ${stats.failed} failed`}
+        ctaText="View all"
+        ctaHref="/dashboard#activity"
+      />
+      <UsageCard
+        icon={<IconShieldCheck size={14} />}
+        label="Success rate"
+        value={stats.total > 0 ? `${stats.successRate}%` : '—'}
+        sub={
+          stats.total === 0
+            ? 'No deploys yet'
+            : stats.failed === 0
+              ? 'No failures — clean streak'
+              : `${stats.failed} failure${stats.failed === 1 ? '' : 's'}`
+        }
+        tone={stats.failed === 0 ? 'ok' : stats.successRate < 80 ? 'err' : 'warn'}
+        ctaText="Observability"
+        ctaHref="/dashboard#observability"
+      />
+      <UsageCard
+        icon={<IconChart size={14} />}
+        label="Avg build time"
+        value={stats.avgBuildSec > 0 ? `${stats.avgBuildSec}s` : '—'}
+        sub="mean of completed builds"
+        ctaText="Details"
+        ctaHref="/dashboard#observability"
+      />
+      <UsageCard
+        icon={<IconCheck size={14} />}
+        label="Live now"
+        value={`${liveCount} / ${projectCount}`}
+        sub={projectCount === 0 ? 'no projects yet' : 'projects serving traffic'}
+        tone={liveCount === projectCount && projectCount > 0 ? 'ok' : undefined}
+      />
+    </div>
+  );
+}
+
+function UsageCard({
+  icon,
+  label,
+  value,
+  sub,
+  ctaText,
+  ctaHref,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  ctaText?: string | undefined;
+  ctaHref?: string | undefined;
+  tone?: 'ok' | 'warn' | 'err' | undefined;
+}): JSX.Element {
+  return (
+    <div className={`dash-usage-card${tone ? ` dash-usage-card--${tone}` : ''}`}>
+      <div className="dash-usage-card-label">
+        <span className="dash-usage-card-icon">{icon}</span>
+        {label}
+      </div>
+      <div className="dash-usage-card-value">{value}</div>
+      <div className="dash-usage-card-sub">{sub}</div>
+      {ctaText && ctaHref && (
+        <Link to={ctaHref} className="dash-usage-card-cta">
+          {ctaText} <IconArrowUpRight size={11} />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function RecentPreviews({
+  projects,
+  deployments,
+}: {
+  projects: Project[] | null;
+  deployments: Record<string, Deployment[]>;
+}): JSX.Element | null {
+  const items = useMemo(() => {
+    if (!projects) return [];
+    const out: Array<{ project: Project; deployment: Deployment }> = [];
+    for (const p of projects) {
+      const ds = deployments[p.id] ?? [];
+      // First 4 across all projects
+      for (const d of ds.slice(0, 4 - out.length)) {
+        out.push({ project: p, deployment: d });
+        if (out.length >= 4) break;
+      }
+      if (out.length >= 4) break;
+    }
+    return out;
+  }, [projects, deployments]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <section className="dash-section">
+      <div className="dash-section-head">
+        <h2>Recent previews</h2>
+        <span className="dash-section-sub">latest 4</span>
+      </div>
+      <div className="dash-previews-grid">
+        {items.map(({ project, deployment }) => (
+          <Link
+            key={deployment.id}
+            to={`/projects/${project.id}/deployments/${deployment.id}`}
+            className="dash-preview-card"
+          >
+            <div className="dash-preview-card-top">
+              <div className="dash-preview-card-name">
+                {project.framework ? <FrameworkIcon framework={project.framework} size={12} /> : null}
+                {project.name}
+              </div>
+              <StatusBadge deployment={deployment} compact />
+            </div>
+            <div className="dash-preview-card-sha">{deployment.commitSha.slice(0, 7)}</div>
+            <div className="dash-preview-card-time">{timeAgo(deployment.startedAt)}</div>
+            {deployment.publicUrl && (
+              <div className="dash-preview-card-url">{deployment.publicUrl.replace(/^https?:\/\//, '')}</div>
+            )}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AlertsCard(): JSX.Element {
+  return (
+    <section className="dash-section">
+      <div className="dash-section-head">
+        <h2>Alerts</h2>
+      </div>
+      <div className="dash-alerts-card">
+        <div className="dash-alerts-icon">
+          <IconShieldCheck size={20} />
+        </div>
+        <div className="dash-alerts-body">
+          <div className="dash-alerts-title">Get alerted for anomalies</div>
+          <p>
+            Automatically monitor your projects for anomalies and get notified
+            when something needs your attention.
+          </p>
+          <Link to="/billing" className="dash-alerts-cta">
+            Upgrade to Pro
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
 }

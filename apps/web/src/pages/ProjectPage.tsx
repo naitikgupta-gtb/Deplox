@@ -40,6 +40,19 @@ export function ProjectPage(): JSX.Element {
     refreshAll().catch(() => undefined);
   }, [projectId]);
 
+  // Set the page title on <html> so DashboardLayout's topbar can show the
+  // project name as the page heading (Vercel-style). Cleaned up on unmount
+  // so the next page doesn't inherit it.
+  useEffect(() => {
+    if (project?.name) {
+      document.documentElement.setAttribute('data-page-title', project.name);
+      return () => {
+        document.documentElement.removeAttribute('data-page-title');
+      };
+    }
+    return undefined;
+  }, [project?.name]);
+
   // While any deployment is in flight (queued/cloning/detecting/building/starting),
   // poll every 3s so the dashboard reflects new state without a manual reload.
   useEffect(() => {
