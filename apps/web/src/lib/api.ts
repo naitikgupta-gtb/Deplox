@@ -91,6 +91,21 @@ export interface FoundingMemberResponse {
   readonly message?: string;
 }
 
+/** Response from POST /api/projects/:id/custom-domain/start. */
+export interface CustomDomainStartResponse {
+  readonly domain: string;
+  readonly txtHost: string;
+  readonly txtValue: string;
+  readonly token: string;
+  readonly alreadyVerified: boolean;
+}
+
+/** Response from POST /api/projects/:id/custom-domain/verify. */
+export type CustomDomainVerifyResponse =
+  | { readonly status: 'verified'; readonly domain: string }
+  | { readonly status: 'pending'; readonly domain: string; readonly reason: string }
+  | { readonly status: 'no_challenge'; readonly domain: string; readonly reason: string };
+
 export const api = {
   me: () => request<User>('/api/me'),
   listProjects: () => request<Project[]>('/api/projects'),
@@ -108,6 +123,21 @@ export const api = {
     request<WebhookInfo>(`/api/projects/${projectId}/webhook`),
   rotateWebhook: (projectId: string) =>
     request<WebhookInfo>(`/api/projects/${projectId}/webhook/rotate`, { method: 'POST' }),
+
+  // Custom-domain ownership verification flow.
+  // See services/domain-verification.ts in the API.
+  startCustomDomain: (projectId: string, domain: string) =>
+    request<CustomDomainStartResponse>(
+      `/api/projects/${projectId}/custom-domain/start`,
+      { method: 'POST', body: JSON.stringify({ domain }) },
+    ),
+  verifyCustomDomain: (projectId: string) =>
+    request<CustomDomainVerifyResponse>(
+      `/api/projects/${projectId}/custom-domain/verify`,
+      { method: 'POST' },
+    ),
+  removeCustomDomain: (projectId: string) =>
+    request<void>(`/api/projects/${projectId}/custom-domain`, { method: 'DELETE' }),
   listDeployments: (projectId: string) =>
     request<Deployment[]>(`/api/projects/${projectId}/deployments`),
   createDeployment: (projectId: string, input: CreateDeploymentInput = {}) =>

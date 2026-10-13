@@ -96,6 +96,15 @@ export const projects = pgTable(
     defaultBranch: text('default_branch').notNull().default('main'),
     framework: text('framework'), // null until first deployment detects it
     customDomain: text('custom_domain'),
+    /**
+     * Whether the user has proven ownership of `customDomain` by adding a
+     * DNS TXT record at `_deplox-verify.<customDomain>`. See
+     * 0005_custom_domain_verification.sql and
+     * services/domain-verification.ts.
+     */
+    customDomainVerified: boolean('custom_domain_verified').notNull().default(false),
+    customDomainVerificationToken: text('custom_domain_verification_token'),
+    customDomainVerifiedAt: timestamp('custom_domain_verified_at', { withTimezone: true }),
     /** Random secret GitHub uses to sign webhook payloads (X-Hub-Signature-256). */
     webhookSecret: text('webhook_secret'),
     /** Whether the project auto-deploys on push to the default branch. */

@@ -1038,6 +1038,21 @@ button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .webhook-row { margin-bottom: 14px; }
 
+/* Custom-domain verification block: shows the user the TXT record they
+   must publish at their DNS provider to prove domain ownership. */
+.dash-domain-verify {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-alt);
+}
+.dash-domain-verify p { line-height: 1.5; }
+.dash-domain-verify code {
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
 /* ===== 404 ===== */
 .not-found {
   text-align: center;

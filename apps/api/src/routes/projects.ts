@@ -17,7 +17,6 @@ import { loadConfig } from '@deplox/shared-config';
 import type { Project } from '@deplox/shared-types';
 import { decrypt } from '../services/encryption.js';
 import {
-  registerDomainRoute,
   unregisterDomainRoute,
   unregisterAutoSubdomainRoute,
 } from '../services/caddy.js';
@@ -59,6 +58,17 @@ function toProject(row: typeof projects.$inferSelect): Project {
     defaultBranch: row.defaultBranch,
     framework: (row.framework as Project['framework']) ?? null,
     customDomain: row.customDomain,
+    customDomainVerified: row.customDomainVerified,
+    customDomainVerifiedAt: row.customDomainVerifiedAt
+      ? row.customDomainVerifiedAt.toISOString()
+      : null,
+    // Only expose the TXT token to the owning user when the domain is
+    // NOT yet verified. Once verified, drop it from the response so we
+    // don't keep a long-lived secret in the client's view of the world.
+    customDomainVerificationToken:
+      row.customDomain && !row.customDomainVerified
+        ? row.customDomainVerificationToken
+        : null,
     autoDeploy: row.autoDeploy,
     webhookConfigured: row.webhookSecret !== null,
     createdAt: row.createdAt.toISOString(),
@@ -168,7 +178,21 @@ export function registerProjectRoutes(app: FastifyInstance): void {
     };
   });
 
-  /** PATCH /api/projects/:id — update auto-deploy / custom-domain settings. */
+  /**
+   * PATCH /api/projects/:id — update auto-deploy / custom-domain settings.
+   *
+   * For customDomain, the new flow is:
+   *   - Setting a new domain: do NOT register a Caddy route here. The
+   *     user must complete DNS verification via
+   *     POST /api/projects/:id/custom-domain/start then /verify before
+   *     any route is added. This PATCH only stores the domain as
+   *     unverified (customDomainVerified = false) and unregisters any
+   *     previous custom-domain route.
+   *   - Setting customDomain = null: unregister any existing route and
+   *     clear the verification fields.
+   *   - Same customDomain already set and already verified: no-op on the
+   *     Caddy side.
+   */
   app.patch('/api/projects/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = UpdateProjectSchema.safeParse(req.body ?? {});
@@ -179,7 +203,6 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       });
     }
 
-    // Fetch the current row so we can compare customDomain before / after.
     const [current] = await db
       .select()
       .from(projects)
@@ -188,7 +211,33 @@ export function registerProjectRoutes(app: FastifyInstance): void {
 
     const update: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.autoDeploy !== undefined) update.autoDeploy = parsed.data.autoDeploy;
-    if (parsed.data.customDomain !== undefined) update.customDomain = parsed.data.customDomain;
+
+    // Custom-domain handling:
+    //   null  -> clear everything, unregister route
+    //   same  -> noop
+    //   new   -> store as unverified, unregister previous route. NO new
+    //            Caddy route yet -- user must complete DNS verification.
+    if (parsed.data.customDomain !== undefined) {
+      const next = parsed.data.customDomain; // string | null
+      if (next === null) {
+        update.customDomain = null;
+        update.customDomainVerified = false;
+        update.customDomainVerifiedAt = null;
+        update.customDomainVerificationToken = null;
+      } else if (next !== current.customDomain) {
+        // New domain. The verification flow (start/verify) will be
+        // triggered separately by the UI; for now we just record the
+        // intent and clear the verified flag.
+        update.customDomain = next;
+        update.customDomainVerified = false;
+        update.customDomainVerifiedAt = null;
+        // Leave any prior token in place so the user can re-publish it
+        // without re-issuing if the domain string didn't change in
+        // practice. (We could rotate here, but that would also delete
+        // the user's TXT record at their DNS provider.)
+      }
+    }
+
     const [row] = await db
       .update(projects)
       .set(update)
@@ -196,32 +245,15 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       .returning();
     if (!row) return reply.code(404).send({ error: 'not_found' });
 
-    // Re-register the Caddy route if the custom domain actually changed.
-    // - Domain added or changed → unregister the old one, then leave the
-    //   next deployment to register the new one (we don't have a hostPort yet).
-    // - Domain removed → unregister the route entirely.
+    // Tear down the old Caddy route if the domain changed or was cleared.
+    // We never register a new one from this endpoint -- the dedicated
+    // /custom-domain/verify route handles that after DNS ownership proof.
     if (
       parsed.data.customDomain !== undefined &&
       current.customDomain !== row.customDomain
     ) {
       if (current.customDomain) {
         unregisterDomainRoute(current.id).catch(() => undefined);
-      }
-      // If the project has a currently-running deployment, immediately
-      // re-register against the new domain so traffic flows without waiting
-      // for the next one.
-      if (row.customDomain) {
-        const running = await db
-          .select()
-          .from(deployments)
-          .where(eq(deployments.projectId, row.id))
-          .limit(50);
-        const live = running.find(
-          (d) => d.status === 'running' && d.hostPort !== null,
-        );
-        if (live && live.hostPort !== null) {
-          registerDomainRoute(row.id, row.customDomain, live.hostPort).catch(() => undefined);
-        }
       }
     }
 

@@ -73,6 +73,22 @@ export interface Project {
   readonly defaultBranch: string;
   readonly framework: Framework | null;
   readonly customDomain: string | null;
+  /**
+   * Whether the user has proven ownership of `customDomain` by adding a
+   * DNS TXT record at `_deplox-verify.<customDomain>`. False until the
+   * TXT record is in place and the user clicks "Verify". When false, the
+   * Caddy route is NOT registered and the domain doesn't serve traffic.
+   */
+  readonly customDomainVerified: boolean;
+  readonly customDomainVerifiedAt: string | null;
+  /**
+   * The TXT value the user must publish at `_deplox-verify.<customDomain>`
+   * to prove ownership. Returned only when the project has a customDomain
+   * AND it is not yet verified — used to render the DNS-instructions UI.
+   * Once verified the server stops sending this field (clients can refresh
+   * the project to clear it).
+   */
+  readonly customDomainVerificationToken: string | null;
   /** Whether pushes to the default branch should trigger an automatic deploy. */
   readonly autoDeploy: boolean;
   /** Whether this project has a webhook secret configured (never expose the secret itself). */

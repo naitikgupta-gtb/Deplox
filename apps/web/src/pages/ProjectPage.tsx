@@ -11,7 +11,10 @@ import {
   IconTerminal,
   IconTrash,
   IconZap,
+  IconCheck,
+  IconCopy,
 } from '../components/Icon';
+import { IconCircleDashed } from '../components/IconNav';
 
 export function ProjectPage(): JSX.Element {
   const { projectId } = useParams<{ projectId: string }>();
@@ -130,6 +133,9 @@ export function ProjectPage(): JSX.Element {
       <CustomDomainSection
         projectId={project.id}
         customDomain={project.customDomain}
+        customDomainVerified={project.customDomainVerified}
+        customDomainVerifiedAt={project.customDomainVerifiedAt}
+        customDomainVerificationToken={project.customDomainVerificationToken}
         onChange={refreshAll}
       />
 
@@ -481,24 +487,43 @@ function WebhookSection({
 function CustomDomainSection({
   projectId,
   customDomain,
+  customDomainVerified,
+  customDomainVerifiedAt,
+  customDomainVerificationToken,
   onChange,
 }: {
   projectId: string;
   customDomain: string | null;
+  customDomainVerified: boolean;
+  customDomainVerifiedAt: string | null;
+  customDomainVerificationToken: string | null;
   onChange: () => Promise<void>;
 }): JSX.Element {
-  const [editing, setEditing] = useState(customDomain === null);
   const [draft, setDraft] = useState(customDomain ?? '');
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
 
-  async function save(): Promise<void> {
+  // Compute the TXT record the user must add. We reconstruct it from the
+  // token + domain because the API only returns the token while the
+  // domain is unverified.
+  const txtHost = customDomain ? `_deplox-verify.${customDomain}` : '';
+  const txtValue = customDomainVerificationToken
+    ? `deplox-verify=${customDomainVerificationToken}`
+    : '';
+
+  async function startVerification(): Promise<void> {
     setBusy(true);
     setError(null);
+    setVerifyMessage(null);
     try {
-      const next = draft.trim() === '' ? null : draft.trim();
-      await api.updateProject(projectId, { customDomain: next });
-      setEditing(next === null);
+      const next = draft.trim().toLowerCase();
+      if (next === '') {
+        await api.removeCustomDomain(projectId);
+      } else {
+        await api.startCustomDomain(projectId, next);
+      }
       await onChange();
     } catch (err) {
       setError(String(err));
@@ -507,20 +532,72 @@ function CustomDomainSection({
     }
   }
 
-  return (
-    <section className="section">
-      <h2>Custom domain</h2>
-      {customDomain && !editing ? (
-        <div className="kv">
-          <div className="kv-label">Hostname</div>
-          <div className="kv-value mono">
-            <code>{customDomain}</code>
-            <button className="ghost" onClick={() => { setDraft(customDomain); setEditing(true); }}>
-              Edit
-            </button>
-          </div>
-        </div>
-      ) : (
+  async function verify(): Promise<void> {
+    setVerifying(true);
+    setError(null);
+    setVerifyMessage(null);
+    try {
+      const res = await api.verifyCustomDomain(projectId);
+      if (res.status === 'verified') {
+        setVerifyMessage('Verified! Custom domain is now serving traffic.');
+      } else if (res.status === 'pending') {
+        const reason = res.reason;
+        if (reason === 'dns_not_found') {
+          setVerifyMessage(
+            'TXT record not found yet. DNS can take a few minutes to propagate — try again shortly.',
+          );
+        } else if (reason === 'txt_value_mismatch') {
+          setVerifyMessage(
+            'TXT record found but the value does not match. Re-check the value below against what you published.',
+          );
+        } else if (reason.startsWith('dns_error:')) {
+          setVerifyMessage(`DNS lookup error (${reason}). Try again in a minute.`);
+        } else {
+          setVerifyMessage(`Pending: ${reason}`);
+        }
+      } else {
+        setVerifyMessage(`No challenge issued yet.`);
+      }
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function remove(): Promise<void> {
+    if (!window.confirm(`Remove custom domain "${customDomain}"?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.removeCustomDomain(projectId);
+      setDraft('');
+      await onChange();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyValue(value: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  // No custom domain yet -- show the input.
+  if (!customDomain) {
+    return (
+      <section className="section">
+        <h2>Custom domain</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          Serve this project on your own domain (e.g. <code>app.yourcompany.com</code>).
+          TLS is issued automatically once you verify ownership.
+        </p>
         <div className="form" style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
           <label style={{ flex: 1 }}>
             <span className="label-text">Hostname</span>
@@ -531,21 +608,126 @@ function CustomDomainSection({
               pattern="^[a-z0-9.-]+\.[a-z]{2,}$"
               disabled={busy}
             />
-            <span className="help">
-              Point this domain's DNS A/AAAA record at the DEPLOX server.
-              TLS is issued automatically on first request.
-            </span>
           </label>
-          <button className="primary" onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
+          <button
+            className="primary"
+            onClick={startVerification}
+            disabled={busy || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(draft.trim())}
+          >
+            {busy ? 'Starting…' : 'Add domain'}
           </button>
-          {customDomain ? (
-            <button className="ghost" onClick={() => { setDraft(customDomain); setEditing(false); }}>
-              Cancel
+        </div>
+        {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
+      </section>
+    );
+  }
+
+  // Custom domain is set. Show different states.
+  return (
+    <section className="section">
+      <h2>Custom domain</h2>
+
+      <div className="kv">
+        <div className="kv-label">Hostname</div>
+        <div className="kv-value mono">
+          <code>{customDomain}</code>
+          {customDomainVerified && (
+            <a
+              href={`https://${customDomain}`}
+              target="_blank"
+              rel="noreferrer"
+              className="ghost"
+              style={{ textDecoration: 'none' }}
+            >
+              Open ↗
+            </a>
+          )}
+        </div>
+        <div className="kv-label">Status</div>
+        <div className="kv-value">
+          {customDomainVerified ? (
+            <span className="dash-badge dash-badge--ok">
+              <IconCheck size={12} /> Verified
+              {customDomainVerifiedAt
+                ? ` on ${new Date(customDomainVerifiedAt).toLocaleDateString()}`
+                : ''}
+            </span>
+          ) : (
+            <span className="dash-badge dash-badge--warn">
+              <IconCircleDashed size={12} /> Pending verification
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!customDomainVerified && (
+        <div className="dash-domain-verify">
+          <p className="small">
+            To prove you own <code>{customDomain}</code>, add this DNS TXT record at
+            your domain provider, then click <strong>Verify</strong>:
+          </p>
+          <div className="kv" style={{ marginTop: 8 }}>
+            <div className="kv-label">Type</div>
+            <div className="kv-value"><code>TXT</code></div>
+            <div className="kv-label">Host</div>
+            <div className="kv-value">
+              <code>{txtHost}</code>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => copyValue(txtHost)}
+                aria-label="Copy host"
+                title="Copy"
+              >
+                <IconCopy size={13} />
+              </button>
+            </div>
+            <div className="kv-label">Value</div>
+            <div className="kv-value">
+              <code>{txtValue}</code>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => copyValue(txtValue)}
+                aria-label="Copy value"
+                title="Copy"
+              >
+                <IconCopy size={13} />
+              </button>
+            </div>
+          </div>
+          <p className="small muted" style={{ marginTop: 8 }}>
+            After saving the TXT record, DNS can take a few minutes to propagate.
+            Once verified, this section turns green and traffic flows immediately.
+          </p>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="primary"
+              onClick={verify}
+              disabled={verifying}
+            >
+              {verifying ? 'Checking DNS…' : 'Verify now'}
             </button>
-          ) : null}
+            {verifyMessage && (
+              <span className="small muted">{verifyMessage}</span>
+            )}
+          </div>
         </div>
       )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={remove}
+          disabled={busy}
+        >
+          {busy ? 'Removing…' : 'Remove custom domain'}
+        </button>
+      </div>
+
       {error ? <p className="error small" style={{ marginTop: 8 }}>{error}</p> : null}
     </section>
   );
