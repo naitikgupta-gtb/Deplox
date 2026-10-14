@@ -131,7 +131,7 @@ export function NewProjectPage(): JSX.Element {
             <input
               required
               pattern="[\w.-]+/[\w.-]+"
-              placeholder="vercel/next.js"
+              placeholder="username/repo"
               value={manualRepo}
               onChange={(e) => setManualRepo(e.target.value)}
             />

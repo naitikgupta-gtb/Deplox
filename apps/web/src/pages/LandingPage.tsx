@@ -121,7 +121,7 @@ export function LandingPage(): JSX.Element {
 
         <div className="hero-visual" aria-hidden="true">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ color: 'var(--color-fg-muted)' }}>vercel / next.js</span>
+            <span style={{ color: 'var(--color-fg-muted)' }}>acme / storefront</span>
             <span className="status status-running">
               <span className="dot" /> running
             </span>
@@ -142,10 +142,10 @@ export function LandingPage(): JSX.Element {
           </div>
           <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 12, fontSize: 11, color: 'var(--color-fg-muted)' }}>
             <div>$ deplox deploy</div>
-            <div>→ cloning vercel/next.js @ a1b2c3d</div>
+            <div>→ cloning acme/storefront @ 8f3a2c1</div>
             <div>→ detected framework: nextjs</div>
             <div>→ building (12s)</div>
-            <div style={{ color: 'var(--color-running)' }}>✓ running on https://next-app.deplox.dev</div>
+            <div style={{ color: 'var(--color-running)' }}>✓ running on https://storefront.deplox.site</div>
           </div>
         </div>
       </section>
