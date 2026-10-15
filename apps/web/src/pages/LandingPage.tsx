@@ -13,6 +13,7 @@ import {
   IconZap,
 } from '../components/Icon';
 import { Logo } from '../components/Logo';
+import { FeaturedOn } from '../components/FeaturedOn';
 import { useMeta } from '../lib/use-meta';
 
 /**
@@ -149,6 +150,8 @@ export function LandingPage(): JSX.Element {
           </div>
         </div>
       </section>
+
+      <FeaturedOn />
 
       <section className="live-on">
         <div className="live-on-label">
