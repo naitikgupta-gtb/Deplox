@@ -12,30 +12,31 @@
  *     want to drop legitimate deliveries.
  *
  * Implementation:
- *   - In-memory store by default. Sufficient for a single-host
- *     deployment. If we ever go multi-host, swap to a Redis store
- *     (Upstash is already wired up for the queue).
- *   - `keyGenerator` returns the client IP. We trust trustProxy:true
- *     in server.ts so the real client IP is used, not Caddy's loopback.
+ *   - Global limiter: @fastify/rate-limit (in-memory store, fine for
+ *     single-host; swap to Redis for multi-host).
+ *   - /auth/* limiter: hand-rolled in onRequest hook because the
+ *     auth routes are registered flat on the main app (not in an
+ *     encapsulated sub-plugin), so per-route plugin config is the
+ *     only way to override the global limit. The preHandler-based
+ *     approach we tried first didn't fire because no route was
+ *     inside the sub-app. This is more direct.
  *
  * Per docs/SECURITY-AUDIT.md — rate limiting.
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 
 const GLOBAL_MAX = 200;
 const GLOBAL_WINDOW = '1 minute';
 const AUTH_MAX = 20;
-const AUTH_WINDOW = '1 minute';
+const AUTH_WINDOW_MS = 60 * 1000;
 
 export async function registerRateLimit(app: FastifyInstance): Promise<void> {
   await app.register(rateLimit, {
     global: true,
     max: GLOBAL_MAX,
     timeWindow: GLOBAL_WINDOW,
-    // Prefer the X-Forwarded-For header (Cloudflare sets this). trustProxy
-    // is on in server.ts, so req.ip already reflects the real client.
     keyGenerator: (req: FastifyRequest) => req.ip,
     // Bypass: don't rate-limit webhooks (GitHub retries on 429) or the
     // health endpoint (used by the watchdog's self-heal loop).
@@ -55,27 +56,30 @@ export async function registerRateLimit(app: FastifyInstance): Promise<void> {
     }),
   });
 
-  // Tighter bucket for the auth flow. Registered as a sub-plugin so the
-  // tighter limit only applies within this scope.
-  await app.register(async (subApp) => {
-    await subApp.register(rateLimit, {
-      max: AUTH_MAX,
-      timeWindow: AUTH_WINDOW,
-      keyGenerator: (req: FastifyRequest) => req.ip,
-    });
-    // Apply the tighter limit to /auth/* by adding a preHandler that checks
-    // the route. A cleaner approach is to set the limit per-route, but
-    // since the auth routes are registered flat (not encapsulated), we
-    // add a hook scoped to this sub-plugin and check the URL.
-    subApp.addHook('preHandler', async (req, reply) => {
-      if (req.url.startsWith('/auth/')) {
-        // The per-IP count was just incremented by the global limiter too;
-        // we accept the slight over-counting in exchange for simpler code.
-        // (Each successful request through this hook already counts
-        // against both the global and auth buckets, which means /auth/*
-        // is effectively capped at min(global, auth) = 20 req/min.)
-        if (reply.statusCode === 429) return; // already limited
-      }
-    });
+  // Tighter bucket for /auth/* — independent counter from the global
+  // limiter. The onRequest hook fires before any other hook, so this
+  // check happens even before auth/route resolution.
+  const authHits = new Map<string, { count: number; resetAt: number }>();
+  const authPathRe = /^\/auth\//;
+  app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!authPathRe.test(req.url)) return;
+    const ip = req.ip;
+    const now = Date.now();
+    const entry = authHits.get(ip);
+    if (!entry || entry.resetAt < now) {
+      authHits.set(ip, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+      return;
+    }
+    entry.count++;
+    if (entry.count > AUTH_MAX) {
+      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+      reply
+        .header('Retry-After', String(retryAfter))
+        .code(429)
+        .send({
+          error: 'rate_limited',
+          message: `Too many auth attempts. Try again in ${retryAfter}s.`,
+        });
+    }
   });
 }
