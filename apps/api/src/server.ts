@@ -33,6 +33,8 @@ import { registerGithubReposRoute } from './routes/github-repos.js';
 import { primePortCache } from './services/port-allocator.js';
 import { primeCaddyRoutes } from './services/caddy.js';
 import { startContainerSelfHeal } from './services/container-self-heal.js';
+import { registerSecurityHeaders } from './security/headers.js';
+import { registerRateLimit } from './security/rate-limit.js';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -58,6 +60,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
   await app.register(cookie);
   await app.register(sensible);
+
+  // Rate limiting — global 200 req/min per IP, tighter on /auth/*.
+  // Must be registered before routes so per-route overrides take effect.
+  await registerRateLimit(app);
+
+  // Security headers — applied to every response (including errors).
+  // See apps/api/src/security/headers.ts for the policy.
+  registerSecurityHeaders(app);
 
   // Capture raw request bodies for routes that verify HMAC (e.g. webhooks).
   // Stash the raw bytes on req.rawBody; Fastify's normal JSON parser still
