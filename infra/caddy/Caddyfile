@@ -36,6 +36,35 @@
 # :8000. Per-hostname routes (event-checkin-ec.deplox.site → localhost:9002
 # etc.) MUST be inserted BEFORE this catch-all in the routes array, not
 # appended after — see registerAutoSubdomainRoute() in apps/api/src/services/caddy.ts.
+#
+# Security headers (CSP, HSTS, X-Frame, etc.) are set HERE rather than in
+# the API so they apply to every response — including the static HTML
+# served by Vite (which is the one path the API can't reach). The API also
+# sets them as a defense-in-depth measure for direct-port-8080 access.
 :8000 {
 	reverse_proxy host.docker.internal:5173
+
+	header {
+		# HSTS: 2 years + subdomains + preload-eligible. Cloudflare Tunnel
+		# already serves HSTS, but we set it here too for direct access.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		# Clickjacking defense. CSP frame-ancestors is the modern equivalent
+		# but X-Frame-Options covers older browsers.
+		X-Frame-Options "DENY"
+		# Block MIME-sniffing.
+		X-Content-Type-Options "nosniff"
+		# Don't leak full URLs to third parties.
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Opt out of FLoC + sensors.
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+		# Spectre-class defense.
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		# CSP — tight policy for the Vite-served SPA + JSON API. Inline
+		# styles allowed because Vite injects them; tighten later.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://avatars.githubusercontent.com https://api.github.com; frame-ancestors 'none'; form-action 'self' https://github.com; base-uri 'self'; object-src 'none'; upgrade-insecure-requests"
+		# Belt-and-suspenders: remove the Server header so we don't leak
+		# Caddy version in case Cloudflare ever changes its forwarding.
+		-Server
+	}
 }
