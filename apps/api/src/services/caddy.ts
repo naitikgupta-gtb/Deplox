@@ -275,9 +275,14 @@ async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
   });
   if (!post.ok) return false;
 
-  // 3) Find and DELETE the bare catch-all (no @id, no match). It must be at
-  //    index 0 because every other route we add has an @id and we just
-  //    appended ours.
+  // 3) Find and DELETE every bare catch-all route (no @id, no match). It is
+  //    possible to have more than one of these:
+  //      - the Caddyfile default `:8000 { reverse_proxy ... }` (no @id)
+  //      - ensureDeploxSiteCatchAll()'s main-app route (no @id, 5173)
+  //      - any leftover no-@id route from a prior buggy run
+  //    A previous version of this function only handled the first one, which
+  //    silently left the new per-host route sandwiched between two
+  //    catch-alls and the second catch-all kept eating the request.
   const after = await adminRequest({
     method: 'GET',
     path: '/config/apps/http/servers/srv0/routes/',
@@ -289,24 +294,32 @@ async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
   } catch {
     return true;
   }
-  // Catch-all is "no @id" — our own route already has @id so it survives the filter.
-  const catchAllIdx = current.findIndex((r) => !r['@id']);
-  if (catchAllIdx < 0) return true; // already at the end? nothing to do
-
-  const delCatchAll = await adminRequest({
-    method: 'DELETE',
-    path: `/config/apps/http/servers/srv0/routes/${catchAllIdx}`,
-  });
-  if (!delCatchAll.ok) return true;
-
-  // 4) Re-add the catch-all so it lands at the END of the routes array.
-  //    Capture the catch-all body BEFORE we deleted it.
-  const catchAll = current[catchAllIdx];
-  const reAdd = await adminRequest({
-    method: 'POST',
-    path: '/config/apps/http/servers/srv0/routes/',
-    body: catchAll,
-  });
+  // Collect every catch-all (no @id) and capture their bodies BEFORE we mutate.
+  const catchAllIdxsAsc: number[] = [];
+  for (let i = 0; i < current.length; i++) {
+    const route = current[i];
+    if (route && !route['@id']) catchAllIdxsAsc.push(i);
+  }
+  if (catchAllIdxsAsc.length === 0) return true; // nothing to reorder
+  const catchAlls = catchAllIdxsAsc.map((i) => current[i]).filter((r): r is Record<string, unknown> => r !== undefined);
+  // Delete in REVERSE so the earlier indexes stay valid as we go.
+  for (const idx of catchAllIdxsAsc.slice().reverse()) {
+    const delCatchAll = await adminRequest({
+      method: 'DELETE',
+      path: `/config/apps/http/servers/srv0/routes/${idx}`,
+    });
+    if (!delCatchAll.ok) return true;
+  }
+  // Re-add every catch-all (in their original relative order) at the END
+  // of the routes array so the new per-host route lands before all of them.
+  for (const ca of catchAlls) {
+    const reAdd = await adminRequest({
+      method: 'POST',
+      path: '/config/apps/http/servers/srv0/routes/',
+      body: ca,
+    });
+    if (!reAdd.ok) return false;
+  }
   // NOTE on persistence: runtime routes survive a Caddy container restart
   // because of two infra-level settings, not because we manually save here:
   //   1. infra/caddy/Caddyfile + `caddy run --resume` in docker-compose.yml
@@ -320,7 +333,7 @@ async function insertRouteAtFront(route: CaddyRoute): Promise<boolean> {
   // admin binding (it reloads config from disk into the running process,
   // which on Caddy 2.8 changes admin from `0.0.0.0:2019` to `localhost:2019`
   // and breaks API → Caddy connectivity). Autosave handles it correctly.
-  return reAdd.ok;
+  return true;
 }
 
 // =============================================================================
