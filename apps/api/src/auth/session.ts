@@ -17,7 +17,9 @@ import { sessions, users } from '../db/schema.js';
 import type { User } from '@deplox/shared-types';
 
 const COOKIE_NAME = 'deplox.sid';
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// 7-day session. Was 30 days; tightened per docs/SECURITY-AUDIT.md to
+// reduce the blast radius of a stolen cookie. Users re-login weekly.
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function createSession(userId: string): Promise<string> {
   const id = randomBytes(32).toString('hex');

@@ -125,10 +125,23 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.setErrorHandler((err, req, reply) => {
     req.log.error({ err }, 'request failed');
     const status = (err as { statusCode?: number }).statusCode ?? 500;
-    reply.code(status).send({
-      error: (err as { code?: string }).code ?? 'internal_error',
-      message: status >= 500 ? 'Internal error' : err.message,
-    });
+    // For 5xx, never leak err.message (could contain stack frames, query
+    // fragments, file paths, or DB error text). For 4xx, the message is
+    // already user-facing by Fastify convention (validation errors, etc.),
+    // so we surface it. Specific error codes are also returned for
+    // client-side branching.
+    const code = (err as { code?: string }).code ?? 'internal_error';
+    if (status >= 500) {
+      reply.code(status).send({
+        error: code,
+        message: 'Internal error',
+      });
+    } else {
+      reply.code(status).send({
+        error: code,
+        message: err.message,
+      });
+    }
   });
 
   // Prime port cache from DB.
