@@ -232,7 +232,8 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
                     disabled={isRemoving}
                     onClick={(e) => handleRemove(p, e)}
                   >
-                    <IconTrash size={15} strokeWidth={2} />
+                    <IconTrash size={14} strokeWidth={2} />
+                    <span className="dash-project-card-remove-label">Delete</span>
                   </button>
                 </div>
 
