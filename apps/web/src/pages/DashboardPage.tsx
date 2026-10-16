@@ -50,6 +50,7 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [deployments, setDeployments] = useState<Record<string, Deployment[]>>({});
   const [removing, setRemoving] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<Project | null>(null);
 
   const filteredProjects = useMemo(() => {
     if (!projects) return null;
@@ -96,15 +97,13 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
   async function handleRemove(p: Project, ev: React.MouseEvent): Promise<void> {
     ev.preventDefault();
     ev.stopPropagation();
-    const ok = window.confirm(
-      `Remove project "${p.name}"?\n\nThis will:\n` +
-        `  • Stop all running deployments\n` +
-        `  • Delete all environment variables\n` +
-        `  • Delete all deployment history\n` +
-        `  • Remove the Caddy custom-domain route\n\n` +
-        `This cannot be undone. The GitHub repo is untouched.`,
-    );
-    if (!ok) return;
+    setConfirmRemove(p);
+  }
+
+  async function confirmRemoveProject(): Promise<void> {
+    if (!confirmRemove) return;
+    const p = confirmRemove;
+    setConfirmRemove(null);
     setRemoving(p.id);
     try {
       await api.deleteProject(p.id);
@@ -233,7 +232,7 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
                     disabled={isRemoving}
                     onClick={(e) => handleRemove(p, e)}
                   >
-                    <IconTrash size={13} />
+                    <IconTrash size={15} strokeWidth={2} />
                   </button>
                 </div>
 
@@ -305,6 +304,15 @@ export function DashboardPage({ user }: { user: User }): JSX.Element {
           </div>
         </section>
       )}
+
+      {confirmRemove ? (
+        <RemoveProjectModal
+          project={confirmRemove}
+          busy={removing === confirmRemove.id}
+          onConfirm={confirmRemoveProject}
+          onCancel={() => setConfirmRemove(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1040,5 +1048,82 @@ function AlertsCard(): JSX.Element {
         </div>
       </div>
     </section>
+  );
+}
+
+// =============================================================================
+// Remove-project confirmation modal
+// =============================================================================
+
+function RemoveProjectModal({
+  project,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  project: Project;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape' && !busy) onCancel();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [busy, onCancel]);
+
+  return (
+    <div className="dash-modal-backdrop" onClick={() => !busy && onCancel()}>
+      <div
+        className="dash-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-project-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dash-modal-icon" aria-hidden="true">
+          <IconTrash size={22} strokeWidth={2} />
+        </div>
+        <h2 id="remove-project-title" className="dash-modal-title">
+          Delete project?
+        </h2>
+        <p className="dash-modal-subtitle">
+          <strong>{project.name}</strong> will be permanently removed.
+        </p>
+
+        <ul className="dash-modal-list">
+          <li>Stop all running deployments</li>
+          <li>Delete all environment variables</li>
+          <li>Delete all deployment history</li>
+          <li>Remove the Caddy custom-domain route</li>
+        </ul>
+
+        <p className="dash-modal-note">
+          Your GitHub repository is not touched. This action cannot be undone.
+        </p>
+
+        <div className="dash-modal-actions">
+          <button
+            type="button"
+            className="dash-modal-btn dash-modal-btn--ghost"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="dash-modal-btn dash-modal-btn--danger"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? 'Deleting…' : 'Delete project'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
