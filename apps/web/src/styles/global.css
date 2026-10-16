@@ -2905,21 +2905,24 @@ button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.2));
   border-radius: var(--radius);
   color: var(--color-fg-faint);
   cursor: pointer;
-  opacity: 0.55;
+  opacity: 1;
   transition: opacity 100ms ease, background 100ms ease, color 100ms ease, border-color 100ms ease;
 }
-.dash-project-card:hover .dash-project-card-remove { opacity: 1; }
 .dash-project-card-remove:hover {
   background: var(--color-error-bg);
   color: var(--color-error);
   border-color: rgba(176, 0, 32, 0.3);
+}
+.dash-project-card-remove:focus-visible {
+  outline: 2px solid var(--color-error);
+  outline-offset: 2px;
 }
 .dash-project-card-remove:disabled { opacity: 0.4; cursor: not-allowed; }
 
